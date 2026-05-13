@@ -16,6 +16,9 @@ impl Camera {
         height: u32,
         padding: f32,
     ) -> Self {
+        if preset == ViewPreset::Print {
+            return Self::from_print_view(bounds, width, height, padding);
+        }
         let (azimuth, elevation) = preset_to_angles(preset);
         Self::from_angles(azimuth, elevation, bounds, width, height, padding)
     }
@@ -36,7 +39,7 @@ impl Camera {
         let az_rad = azimuth.to_radians();
         let el_rad = elevation.to_radians();
 
-        // Camera position on sphere around center
+        // Camera position on sphere around center (Y-up coordinate system)
         let distance = max_dim * 3.0;
         let eye = Vec3::new(
             center.x + distance * el_rad.cos() * az_rad.sin(),
@@ -51,6 +54,40 @@ impl Camera {
         let (view_min, view_max) = project_bounds_to_view(&corners, &view_matrix);
 
         // Compute orthographic projection that fits the model with padding
+        let proj_matrix =
+            compute_ortho_projection(view_min, view_max, width, height, padding, distance);
+
+        Self {
+            view_matrix,
+            proj_matrix,
+        }
+    }
+
+    /// Print bed view: Z-up coordinate system, looking from front and slightly above.
+    /// Models Z axis as vertical in the rendered image.
+    fn from_print_view(bounds: &BoundingBox, width: u32, height: u32, padding: f32) -> Self {
+        let center = bounds.center();
+        let dims = bounds.dimensions();
+        let max_dim = dims.x.max(dims.y).max(dims.z).max(0.001);
+
+        let distance = max_dim * 3.0;
+
+        // Position camera in front (-Y) and above (+Z), with slight X offset
+        // azimuth 20° around Z, elevation 25° from XY plane
+        let az_rad = 20.0_f32.to_radians();
+        let el_rad = 25.0_f32.to_radians();
+
+        let eye = Vec3::new(
+            center.x + distance * el_rad.cos() * az_rad.sin(),
+            center.y - distance * el_rad.cos() * az_rad.cos(), // negative Y = looking from front
+            center.z + distance * el_rad.sin(),
+        );
+
+        let view_matrix = Mat4::look_at_rh(eye, center, Vec3::Z);
+
+        let corners = bbox_corners(bounds);
+        let (view_min, view_max) = project_bounds_to_view(&corners, &view_matrix);
+
         let proj_matrix =
             compute_ortho_projection(view_min, view_max, width, height, padding, distance);
 
@@ -75,6 +112,7 @@ fn preset_to_angles(preset: ViewPreset) -> (f32, f32) {
         ViewPreset::Top => (0.0, 89.99), // Slightly less than 90 to avoid gimbal lock
         ViewPreset::Bottom => (0.0, -89.99),
         ViewPreset::Iso => (45.0, 35.264), // arctan(1/sqrt(2)) ≈ 35.264°
+        ViewPreset::Print => unreachable!("Print uses Z-up, handled in from_preset"),
     }
 }
 
@@ -206,6 +244,7 @@ mod tests {
             ViewPreset::Top,
             ViewPreset::Bottom,
             ViewPreset::Iso,
+            ViewPreset::Print,
         ] {
             let camera = Camera::from_preset(preset, &bounds, 512, 512, 0.08);
             assert!(!camera.view_matrix.is_nan(), "NaN in {:?} view", preset);

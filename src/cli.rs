@@ -93,6 +93,7 @@ pub enum ViewPreset {
     Top,
     Bottom,
     Iso,
+    Print,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -190,6 +191,7 @@ fn parse_view(args: &Args) -> Result<ViewConfig, CliError> {
             "top" => ViewPreset::Top,
             "bottom" => ViewPreset::Bottom,
             "iso" | "isometric" => ViewPreset::Iso,
+            "print" | "bed" => ViewPreset::Print,
             _ => ViewPreset::Iso,
         };
         Ok(ViewConfig::Preset(preset))
@@ -337,6 +339,8 @@ mod tests {
             ("top", ViewPreset::Top),
             ("bottom", ViewPreset::Bottom),
             ("iso", ViewPreset::Iso),
+            ("print", ViewPreset::Print),
+            ("bed", ViewPreset::Print),
         ] {
             let args = make_args(&["stl-render", "t.stl", "-o", "o.png", "--view", name]);
             let config = build_config(args).unwrap();
