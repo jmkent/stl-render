@@ -1,6 +1,8 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
+use crate::stl::{StlError, StlReader, Triangle};
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct BoundingBox {
     pub min: [f32; 3],
@@ -46,6 +48,28 @@ impl BoundingBox {
     pub fn is_valid(&self) -> bool {
         self.initialized
     }
+
+    /// Extend bounds to include all vertices of a triangle.
+    pub fn extend_triangle(&mut self, tri: &Triangle) {
+        for v in &tri.vertices {
+            self.extend(Vec3::from_array(*v));
+        }
+    }
+}
+
+/// Compute bounding box by streaming through all triangles.
+/// Does not store the mesh in memory.
+pub fn compute_bounds(reader: &StlReader) -> Result<(BoundingBox, u64), StlError> {
+    let mut bounds = BoundingBox::new();
+    let mut count = 0u64;
+
+    for result in reader.triangles()? {
+        let tri = result?;
+        bounds.extend_triangle(&tri);
+        count += 1;
+    }
+
+    Ok((bounds, count))
 }
 
 pub fn compute_normal(v0: Vec3, v1: Vec3, v2: Vec3) -> Vec3 {
@@ -57,6 +81,24 @@ pub fn compute_normal(v0: Vec3, v1: Vec3, v2: Vec3) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_bounding_box_new_is_invalid() {
+        let bbox = BoundingBox::new();
+        assert!(!bbox.is_valid());
+    }
+
+    #[test]
+    fn test_bounding_box_single_point() {
+        let mut bbox = BoundingBox::new();
+        bbox.extend(Vec3::new(1.0, 2.0, 3.0));
+
+        assert!(bbox.is_valid());
+        assert_eq!(bbox.min, [1.0, 2.0, 3.0]);
+        assert_eq!(bbox.max, [1.0, 2.0, 3.0]);
+        assert_eq!(bbox.dimensions(), Vec3::ZERO);
+    }
 
     #[test]
     fn test_bounding_box_extend() {
@@ -74,8 +116,7 @@ mod tests {
         bbox.extend(Vec3::new(0.0, 0.0, 0.0));
         bbox.extend(Vec3::new(2.0, 4.0, 6.0));
 
-        let center = bbox.center();
-        assert_eq!(center, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(bbox.center(), Vec3::new(1.0, 2.0, 3.0));
     }
 
     #[test]
@@ -84,8 +125,7 @@ mod tests {
         bbox.extend(Vec3::new(1.0, 2.0, 3.0));
         bbox.extend(Vec3::new(4.0, 6.0, 9.0));
 
-        let dims = bbox.dimensions();
-        assert_eq!(dims, Vec3::new(3.0, 4.0, 6.0));
+        assert_eq!(bbox.dimensions(), Vec3::new(3.0, 4.0, 6.0));
     }
 
     #[test]
@@ -99,6 +139,16 @@ mod tests {
     }
 
     #[test]
+    fn test_compute_normal_is_unit_length() {
+        let v0 = Vec3::new(0.0, 0.0, 0.0);
+        let v1 = Vec3::new(5.0, 0.0, 0.0);
+        let v2 = Vec3::new(0.0, 3.0, 0.0);
+
+        let normal = compute_normal(v0, v1, v2);
+        assert!((normal.length() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
     fn test_compute_normal_degenerate() {
         let v0 = Vec3::new(0.0, 0.0, 0.0);
         let v1 = Vec3::new(1.0, 0.0, 0.0);
@@ -106,5 +156,53 @@ mod tests {
 
         let normal = compute_normal(v0, v1, v2);
         assert_eq!(normal, Vec3::ZERO);
+    }
+
+    #[test]
+    fn test_compute_bounds_cube() {
+        let path = Path::new("fixtures/cube.stl");
+        if path.exists() {
+            let reader = StlReader::open(path).unwrap();
+            let (bounds, count) = compute_bounds(&reader).unwrap();
+
+            assert_eq!(count, 12);
+            assert!(bounds.is_valid());
+
+            // Cube should be centered at origin with size 1
+            let dims = bounds.dimensions();
+            assert!((dims.x - 1.0).abs() < 0.001);
+            assert!((dims.y - 1.0).abs() < 0.001);
+            assert!((dims.z - 1.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_compute_bounds_empty() {
+        let path = Path::new("fixtures/empty.stl");
+        if path.exists() {
+            let reader = StlReader::open(path).unwrap();
+            let (bounds, count) = compute_bounds(&reader).unwrap();
+
+            assert_eq!(count, 0);
+            assert!(!bounds.is_valid());
+        }
+    }
+
+    #[test]
+    fn test_compute_bounds_sphere() {
+        let path = Path::new("fixtures/sphere.stl");
+        if path.exists() {
+            let reader = StlReader::open(path).unwrap();
+            let (bounds, count) = compute_bounds(&reader).unwrap();
+
+            assert_eq!(count, 1280);
+            assert!(bounds.is_valid());
+
+            // Sphere with radius 0.5 should have dimensions ~1.0
+            let dims = bounds.dimensions();
+            assert!((dims.x - 1.0).abs() < 0.01);
+            assert!((dims.y - 1.0).abs() < 0.01);
+            assert!((dims.z - 1.0).abs() < 0.01);
+        }
     }
 }
