@@ -130,3 +130,53 @@ fn test_version_flag() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("stl-render"));
 }
+
+#[test]
+fn test_determinism() {
+    let dir = tempdir().unwrap();
+    let output1 = dir.path().join("render1.png");
+    let output2 = dir.path().join("render2.png");
+
+    let status1 = stl_render()
+        .args(["fixtures/cube.stl", "-o", output1.to_str().unwrap(), "--aa", "none"])
+        .status()
+        .unwrap();
+    assert!(status1.success());
+
+    let status2 = stl_render()
+        .args(["fixtures/cube.stl", "-o", output2.to_str().unwrap(), "--aa", "none"])
+        .status()
+        .unwrap();
+    assert!(status2.success());
+
+    let data1 = std::fs::read(&output1).unwrap();
+    let data2 = std::fs::read(&output2).unwrap();
+
+    assert_eq!(data1, data2, "Same input should produce identical output");
+}
+
+#[test]
+fn test_render_produces_visible_content() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("cube.png");
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--background", "transparent",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+
+    let img = image::open(&output).unwrap().into_rgba8();
+    let non_transparent: usize = img.pixels().filter(|p| p[3] > 0).count();
+
+    assert!(
+        non_transparent > 1000,
+        "Rendered image should have visible content: {} non-transparent pixels",
+        non_transparent
+    );
+}

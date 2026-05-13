@@ -35,6 +35,8 @@ impl RenderError {
 }
 
 pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+    use cli::ViewConfig;
+
     // Verify input file exists
     if config.input.to_str() != Some("-") && !config.input.exists() {
         return Err(RenderError::Stl(StlError::Io(std::io::Error::new(
@@ -43,7 +45,7 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
         ))));
     }
 
-    // Parse STL and compute bounds
+    // Parse STL and compute bounds (first pass)
     let (bounds, triangle_count) = if config.input.to_str() == Some("-") {
         // Stdin: placeholder values (stdin support deferred)
         (BoundingBox::new(), 0)
@@ -52,13 +54,43 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
         mesh::compute_bounds(&reader)?
     };
 
-    // Create placeholder image (solid gray)
-    let fb = render::Framebuffer::new(
-        config.width,
-        config.height,
+    // Compute render dimensions (scale up for AA)
+    let aa_scale = match config.aa {
+        cli::AntiAliasing::None => 1,
+        cli::AntiAliasing::X2 => 2,
+        cli::AntiAliasing::X4 => 4,
+    };
+    let render_width = config.width * aa_scale;
+    let render_height = config.height * aa_scale;
+
+    // Setup camera
+    let cam = match config.view {
+        ViewConfig::Preset(preset) => {
+            camera::Camera::from_preset(preset, &bounds, render_width, render_height, config.padding)
+        }
+        ViewConfig::Custom { azimuth, elevation } => {
+            camera::Camera::from_angles(azimuth, elevation, &bounds, render_width, render_height, config.padding)
+        }
+    };
+
+    // Create framebuffer
+    let mut fb = render::Framebuffer::new(
+        render_width,
+        render_height,
         config.background,
         config.background_color,
     );
+
+    // Render triangles (second pass)
+    if config.input.to_str() != Some("-") {
+        let reader = StlReader::open(&config.input)?;
+        for result in reader.triangles()? {
+            let tri = result?;
+            fb.rasterize_triangle(&tri, &cam, config);
+        }
+    }
+
+    // Downsample if AA enabled
     let image = fb.into_image(config.aa);
 
     // Write output
