@@ -53,6 +53,7 @@ stl-render model.stl -o preview.png --azimuth 45 --elevation 30
 --view top      # Looking down -Y axis
 --view bottom   # Looking down +Y axis
 --view iso      # Isometric (45° azimuth, 35° elevation)
+--view print	# Print bed view - down -Z axis with 30/30 azimuth/elevation
 ```
 
 ### Appearance
