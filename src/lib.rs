@@ -43,15 +43,24 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
         ))));
     }
 
-    // For M1: create placeholder output
+    // Parse STL and compute metadata
     let (triangle_count, bounds) = if config.input.to_str() == Some("-") {
-        // Stdin: placeholder values
+        // Stdin: placeholder values (stdin support deferred)
         (0, BoundingBox::new())
     } else {
-        // Read STL to get metadata
+        // Read STL and iterate triangles
         let reader = StlReader::open(&config.input)?;
-        let count = reader.triangle_count().unwrap_or(0);
-        // TODO: compute actual bounds in M2
+
+        // Get count from header (binary) or count by iterating (ASCII)
+        let count = match reader.triangle_count() {
+            Some(c) => c,
+            None => {
+                // ASCII: must count by iterating
+                reader.triangles()?.filter(|r| r.is_ok()).count() as u64
+            }
+        };
+
+        // TODO: compute actual bounds in M3
         (count, BoundingBox::new())
     };
 
