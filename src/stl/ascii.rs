@@ -117,53 +117,39 @@ fn expect_keyword(line: &str, keyword: &str) -> Result<(), StlError> {
 }
 
 fn parse_normal(line: &str) -> Result<[f32; 3], StlError> {
-    let mut parts = line.split_whitespace();
-
-    // Skip "facet" and "normal" keywords
-    let kw1 = parts.next().unwrap_or("");
-    let kw2 = parts.next().unwrap_or("");
-    if !kw1.eq_ignore_ascii_case("facet") || !kw2.eq_ignore_ascii_case("normal") {
-        return Err(StlError::InvalidFormat(format!(
-            "expected 'facet normal', got '{kw1} {kw2}'"
-        )));
-    }
-
-    parse_xyz(&mut parts, "facet normal")
+    parse_keyword_xyz(line, &["facet", "normal"])
 }
 
 fn parse_vertex(line: &str) -> Result<[f32; 3], StlError> {
-    let mut parts = line.split_whitespace();
+    parse_keyword_xyz(line, &["vertex"])
+}
 
-    let kw = parts.next().unwrap_or("");
-    if !kw.eq_ignore_ascii_case("vertex") {
-        return Err(StlError::InvalidFormat(format!(
-            "expected 'vertex', got '{kw}'"
-        )));
+fn parse_keyword_xyz(line: &str, keywords: &[&str]) -> Result<[f32; 3], StlError> {
+    let mut parts = line.split_whitespace();
+    let context = keywords.join(" ");
+
+    for kw in keywords {
+        let actual = parts.next().unwrap_or("");
+        if !actual.eq_ignore_ascii_case(kw) {
+            return Err(StlError::InvalidFormat(format!(
+                "expected '{kw}', got '{actual}'"
+            )));
+        }
     }
 
-    parse_xyz(&mut parts, "vertex")
+    parse_xyz(&mut parts, &context)
 }
 
 fn parse_xyz(parts: &mut std::str::SplitWhitespace<'_>, context: &str) -> Result<[f32; 3], StlError> {
-    let x = parts
-        .next()
-        .ok_or_else(|| StlError::InvalidFormat(format!("{context}: missing x")))?
-        .parse::<f32>()
-        .map_err(|_| StlError::InvalidFormat(format!("{context}: invalid x")))?;
-
-    let y = parts
-        .next()
-        .ok_or_else(|| StlError::InvalidFormat(format!("{context}: missing y")))?
-        .parse::<f32>()
-        .map_err(|_| StlError::InvalidFormat(format!("{context}: invalid y")))?;
-
-    let z = parts
-        .next()
-        .ok_or_else(|| StlError::InvalidFormat(format!("{context}: missing z")))?
-        .parse::<f32>()
-        .map_err(|_| StlError::InvalidFormat(format!("{context}: invalid z")))?;
-
-    Ok([x, y, z])
+    let mut coords = [0.0f32; 3];
+    for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+        coords[i] = parts
+            .next()
+            .ok_or_else(|| StlError::InvalidFormat(format!("{context}: missing {axis}")))?
+            .parse()
+            .map_err(|_| StlError::InvalidFormat(format!("{context}: invalid {axis}")))?;
+    }
+    Ok(coords)
 }
 
 #[cfg(test)]
