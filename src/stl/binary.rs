@@ -4,55 +4,52 @@ const HEADER_SIZE: usize = 80;
 const COUNT_SIZE: usize = 4;
 const TRIANGLE_SIZE: usize = 50; // 12 floats (48 bytes) + 2 byte attribute
 
-pub fn read_triangle_count(data: &[u8]) -> Result<u64, StlError> {
+pub fn read_triangle_count(data: &[u8]) -> Result<u32, StlError> {
     if data.len() < HEADER_SIZE + COUNT_SIZE {
         return Err(StlError::UnexpectedEof);
     }
 
-    let count_bytes: [u8; 4] = data[HEADER_SIZE..HEADER_SIZE + COUNT_SIZE]
+    let bytes: [u8; 4] = data[HEADER_SIZE..HEADER_SIZE + COUNT_SIZE]
         .try_into()
-        .map_err(|_| StlError::UnexpectedEof)?;
+        .unwrap(); // Length already checked
 
-    Ok(u32::from_le_bytes(count_bytes) as u64)
+    Ok(u32::from_le_bytes(bytes))
 }
 
-pub fn validate_size(data: &[u8], triangle_count: u64) -> Result<(), StlError> {
-    let expected_size = HEADER_SIZE + COUNT_SIZE + (triangle_count as usize) * TRIANGLE_SIZE;
-    if data.len() < expected_size {
-        return Err(StlError::UnexpectedEof);
-    }
-    Ok(())
+fn expected_size(triangle_count: u32) -> usize {
+    HEADER_SIZE + COUNT_SIZE + (triangle_count as usize) * TRIANGLE_SIZE
 }
 
+/// Iterator over triangles in a binary STL file.
 pub struct BinaryStlIter<'a> {
     data: &'a [u8],
     offset: usize,
     remaining: u32,
+    total: u32,
 }
 
 impl<'a> BinaryStlIter<'a> {
     pub fn new(data: &'a [u8]) -> Result<Self, StlError> {
-        let count = read_triangle_count(data)? as u32;
-        validate_size(data, count as u64)?;
+        let count = read_triangle_count(data)?;
+
+        if data.len() < expected_size(count) {
+            return Err(StlError::UnexpectedEof);
+        }
 
         Ok(Self {
             data,
             offset: HEADER_SIZE + COUNT_SIZE,
             remaining: count,
+            total: count,
         })
     }
 
     pub fn triangle_count(&self) -> u32 {
-        // Return original count, not remaining
-        if let Ok(count) = read_triangle_count(self.data) {
-            count as u32
-        } else {
-            0
-        }
+        self.total
     }
 }
 
-impl<'a> Iterator for BinaryStlIter<'a> {
+impl Iterator for BinaryStlIter<'_> {
     type Item = Result<Triangle, StlError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -60,55 +57,42 @@ impl<'a> Iterator for BinaryStlIter<'a> {
             return None;
         }
 
-        let end = self.offset + TRIANGLE_SIZE;
-        if end > self.data.len() {
-            return Some(Err(StlError::UnexpectedEof));
-        }
+        let chunk = &self.data[self.offset..self.offset + TRIANGLE_SIZE];
 
-        let chunk = &self.data[self.offset..end];
-
-        // Parse normal (3 floats)
-        let normal = [
-            f32::from_le_bytes(chunk[0..4].try_into().unwrap()),
-            f32::from_le_bytes(chunk[4..8].try_into().unwrap()),
-            f32::from_le_bytes(chunk[8..12].try_into().unwrap()),
+        let normal = read_vec3(chunk, 0);
+        let vertices = [
+            read_vec3(chunk, 12),
+            read_vec3(chunk, 24),
+            read_vec3(chunk, 36),
         ];
 
-        // Parse 3 vertices (9 floats)
-        let v0 = [
-            f32::from_le_bytes(chunk[12..16].try_into().unwrap()),
-            f32::from_le_bytes(chunk[16..20].try_into().unwrap()),
-            f32::from_le_bytes(chunk[20..24].try_into().unwrap()),
-        ];
-        let v1 = [
-            f32::from_le_bytes(chunk[24..28].try_into().unwrap()),
-            f32::from_le_bytes(chunk[28..32].try_into().unwrap()),
-            f32::from_le_bytes(chunk[32..36].try_into().unwrap()),
-        ];
-        let v2 = [
-            f32::from_le_bytes(chunk[36..40].try_into().unwrap()),
-            f32::from_le_bytes(chunk[40..44].try_into().unwrap()),
-            f32::from_le_bytes(chunk[44..48].try_into().unwrap()),
-        ];
-
-        // Skip 2-byte attribute count (bytes 48-49)
-
-        self.offset = end;
+        self.offset += TRIANGLE_SIZE;
         self.remaining -= 1;
 
-        Some(Ok(Triangle {
-            vertices: [v0, v1, v2],
-            normal,
-        }))
+        Some(Ok(Triangle { vertices, normal }))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = self.remaining as usize;
-        (remaining, Some(remaining))
+        let n = self.remaining as usize;
+        (n, Some(n))
     }
 }
 
-impl<'a> ExactSizeIterator for BinaryStlIter<'a> {}
+impl ExactSizeIterator for BinaryStlIter<'_> {}
+
+/// Read 3 consecutive little-endian f32s starting at byte offset.
+fn read_vec3(data: &[u8], offset: usize) -> [f32; 3] {
+    [
+        read_f32(data, offset),
+        read_f32(data, offset + 4),
+        read_f32(data, offset + 8),
+    ]
+}
+
+fn read_f32(data: &[u8], offset: usize) -> f32 {
+    let bytes: [u8; 4] = data[offset..offset + 4].try_into().unwrap();
+    f32::from_le_bytes(bytes)
+}
 
 #[cfg(test)]
 mod tests {
@@ -119,18 +103,15 @@ mod tests {
         data.extend_from_slice(&(triangles.len() as u32).to_le_bytes());
 
         for tri in triangles {
-            // Normal
             for &n in &tri.normal {
                 data.extend_from_slice(&n.to_le_bytes());
             }
-            // Vertices
             for v in &tri.vertices {
-                for &coord in v {
-                    data.extend_from_slice(&coord.to_le_bytes());
+                for &c in v {
+                    data.extend_from_slice(&c.to_le_bytes());
                 }
             }
-            // Attribute byte count
-            data.extend_from_slice(&0u16.to_le_bytes());
+            data.extend_from_slice(&0u16.to_le_bytes()); // attribute
         }
 
         data
@@ -144,41 +125,27 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_size_ok() {
-        let data = vec![0u8; 84 + 50 * 2];
-        assert!(validate_size(&data, 2).is_ok());
-    }
-
-    #[test]
-    fn test_validate_size_truncated() {
-        let data = vec![0u8; 100];
-        assert!(validate_size(&data, 10).is_err());
-    }
-
-    #[test]
     fn test_parse_single_triangle() {
         let tri = Triangle {
             normal: [0.0, 0.0, 1.0],
-            vertices: [
-                [0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [0.5, 1.0, 0.0],
-            ],
+            vertices: [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 1.0, 0.0]],
         };
         let data = make_binary_stl(&[tri]);
 
-        let iter = BinaryStlIter::new(&data).unwrap();
-        let triangles: Vec<_> = iter.map(|r| r.unwrap()).collect();
+        let tris: Vec<_> = BinaryStlIter::new(&data)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
 
-        assert_eq!(triangles.len(), 1);
-        assert_eq!(triangles[0].normal, [0.0, 0.0, 1.0]);
-        assert_eq!(triangles[0].vertices[0], [0.0, 0.0, 0.0]);
-        assert_eq!(triangles[0].vertices[1], [1.0, 0.0, 0.0]);
-        assert_eq!(triangles[0].vertices[2], [0.5, 1.0, 0.0]);
+        assert_eq!(tris.len(), 1);
+        assert_eq!(tris[0].normal, [0.0, 0.0, 1.0]);
+        assert_eq!(tris[0].vertices[0], [0.0, 0.0, 0.0]);
+        assert_eq!(tris[0].vertices[1], [1.0, 0.0, 0.0]);
+        assert_eq!(tris[0].vertices[2], [0.5, 1.0, 0.0]);
     }
 
     #[test]
-    fn test_parse_multiple_triangles() {
+    fn test_parse_1000_triangles() {
         let triangles: Vec<Triangle> = (0..1000)
             .map(|i| Triangle {
                 normal: [0.0, 0.0, 1.0],
@@ -194,11 +161,11 @@ mod tests {
         let iter = BinaryStlIter::new(&data).unwrap();
 
         assert_eq!(iter.triangle_count(), 1000);
-        assert_eq!(iter.count(), 1000);
+        assert_eq!(iter.len(), 1000);
     }
 
     #[test]
-    fn test_parse_zero_triangles() {
+    fn test_zero_triangles() {
         let data = make_binary_stl(&[]);
         let iter = BinaryStlIter::new(&data).unwrap();
 
@@ -207,26 +174,22 @@ mod tests {
     }
 
     #[test]
-    fn test_error_on_truncated_file() {
+    fn test_error_truncated() {
         let mut data = vec![0u8; 84];
-        data[80..84].copy_from_slice(&10u32.to_le_bytes()); // claims 10 triangles
+        data[80..84].copy_from_slice(&10u32.to_le_bytes()); // claims 10
 
-        let result = BinaryStlIter::new(&data);
-        assert!(result.is_err());
+        assert!(BinaryStlIter::new(&data).is_err());
     }
 
     #[test]
-    fn test_error_on_count_mismatch() {
+    fn test_error_count_mismatch() {
         let tri = Triangle {
             normal: [0.0, 0.0, 1.0],
             vertices: [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         };
         let mut data = make_binary_stl(&[tri]);
+        data[80..84].copy_from_slice(&5u32.to_le_bytes()); // lie about count
 
-        // Corrupt the count to claim more triangles
-        data[80..84].copy_from_slice(&5u32.to_le_bytes());
-
-        let result = BinaryStlIter::new(&data);
-        assert!(result.is_err());
+        assert!(BinaryStlIter::new(&data).is_err());
     }
 }

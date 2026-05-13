@@ -43,7 +43,7 @@ impl StlReader {
 
         let format = parser::detect_format(&data);
         let triangle_count = match format {
-            StlFormat::Binary => Some(binary::read_triangle_count(&data)?),
+            StlFormat::Binary => Some(binary::read_triangle_count(&data)? as u64),
             StlFormat::Ascii => None,
         };
 
@@ -81,7 +81,7 @@ pub enum TriangleIter<'a> {
     Ascii(ascii::AsciiStlIter<'a>),
 }
 
-impl<'a> Iterator for TriangleIter<'a> {
+impl Iterator for TriangleIter<'_> {
     type Item = Result<Triangle, StlError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -94,7 +94,7 @@ impl<'a> Iterator for TriangleIter<'a> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         match self {
             TriangleIter::Binary(iter) => iter.size_hint(),
-            TriangleIter::Ascii(_) => (0, None), // ASCII doesn't know count upfront
+            TriangleIter::Ascii(_) => (0, None),
         }
     }
 }
