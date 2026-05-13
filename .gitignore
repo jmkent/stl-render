@@ -1,0 +1,26 @@
+# Rust
+/target/
+Cargo.lock
+
+# Python (fixture generator)
+tools/fixtures/.venv/
+tools/fixtures/__pycache__/
+*.pyc
+
+# Large test files (generated, not committed)
+fixtures/large_*.stl
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+# Added by cargo
+
+/target
