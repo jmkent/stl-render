@@ -74,56 +74,56 @@ stl-render <INPUT> -o <OUTPUT> [OPTIONS]
 
 Development follows TDD: write failing test first, then implement.
 
-### M0: Project Setup
+### M0: Project Setup ✓
 
 **Goal:** Repository ready for development.
 
 #### Rust Project
-- [ ] Initialize cargo project: `cargo init --name stl-render`
-- [ ] Add dependencies to Cargo.toml
-- [ ] Create module structure (empty files)
-- [ ] Setup `cargo test` and `cargo clippy` in CI
-- [ ] Add .gitignore for Rust + Python artifacts
+- [x] Initialize cargo project: `cargo init --name stl-render`
+- [x] Add dependencies to Cargo.toml
+- [x] Create module structure (empty files)
+- [x] Setup `cargo test` and `cargo clippy` in CI
+- [x] Add .gitignore for Rust + Python artifacts
 
 #### Test Fixtures
-- [ ] Verify uv is installed: `uv --version`
-- [ ] Generate fixtures: `cd tools/fixtures && uv run generate_fixtures.py -o ../../fixtures`
-- [ ] Verify fixtures exist: cube.stl, sphere.stl, etc.
-- [ ] Create `fixtures/golden/` directory for reference PNGs
+- [x] Verify uv is installed: `uv --version`
+- [x] Generate fixtures: `cd tools/fixtures && uv run generate_fixtures.py -o ../../fixtures`
+- [x] Verify fixtures exist: cube.stl, sphere.stl, etc.
+- [x] Create `fixtures/golden/` directory for reference PNGs
 
 ---
 
-### M1: Walking Skeleton
+### M1: Walking Skeleton ✓
 
 **Goal:** End-to-end pipeline works with placeholders.
 
 #### CLI (cli.rs)
-- [ ] **Test:** parse minimal args `stl-render input.stl -o out.png`
-- [ ] **Test:** parse all flags with valid values
-- [ ] **Test:** reject missing required args
-- [ ] **Test:** reject --view combined with --azimuth
-- [ ] Implement clap derive struct
-- [ ] Implement validation logic
-- [ ] Implement RenderConfig builder
+- [x] **Test:** parse minimal args `stl-render input.stl -o out.png`
+- [x] **Test:** parse all flags with valid values
+- [x] **Test:** reject missing required args (clap handles)
+- [x] **Test:** reject --view combined with --azimuth
+- [x] Implement clap derive struct
+- [x] Implement validation logic
+- [x] Implement RenderConfig builder
 
 #### STL Detection (stl/parser.rs)
-- [ ] **Test:** detect binary STL from magic bytes
-- [ ] **Test:** detect ASCII STL from "solid" prefix
-- [ ] **Test:** reject empty file
-- [ ] Implement format detection
+- [x] **Test:** detect binary STL from magic bytes
+- [x] **Test:** detect ASCII STL from "solid" prefix
+- [x] **Test:** reject empty file
+- [x] Implement format detection
 
 #### Placeholder Output (output.rs)
-- [ ] **Test:** write solid color PNG to file
-- [ ] **Test:** write PNG to stdout when path is "-"
-- [ ] Implement write_png with placeholder image
+- [x] **Test:** write solid color PNG to file
+- [x] **Test:** write PNG to stdout when path is "-"
+- [x] Implement write_png with placeholder image
 
 #### Main Integration (main.rs)
-- [ ] **Test:** exit code 0 on success
-- [ ] **Test:** exit code 1 on bad args
-- [ ] **Test:** exit code 2 on missing input file
-- [ ] Wire up CLI → placeholder PNG output
+- [x] **Test:** exit code 0 on success
+- [x] **Test:** exit code 1 on bad args
+- [x] **Test:** exit code 2 on missing input file
+- [x] Wire up CLI → placeholder PNG output
 
-**Acceptance:** `stl-render cube.stl -o test.png` produces a solid gray PNG.
+**Acceptance:** `stl-render cube.stl -o test.png` produces a solid gray PNG. ✓
 
 ---
 

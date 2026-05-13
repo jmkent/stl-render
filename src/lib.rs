@@ -34,6 +34,55 @@ impl RenderError {
     }
 }
 
-pub fn render(_config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
-    todo!("render implementation")
+pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+    // Verify input file exists
+    if config.input.to_str() != Some("-") && !config.input.exists() {
+        return Err(RenderError::Stl(StlError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("input file not found: {}", config.input.display()),
+        ))));
+    }
+
+    // For M1: create placeholder output
+    let (triangle_count, bounds) = if config.input.to_str() == Some("-") {
+        // Stdin: placeholder values
+        (0, BoundingBox::new())
+    } else {
+        // Read STL to get metadata
+        let reader = StlReader::open(&config.input)?;
+        let count = reader.triangle_count().unwrap_or(0);
+        // TODO: compute actual bounds in M2
+        (count, BoundingBox::new())
+    };
+
+    // Create placeholder image (solid gray)
+    let fb = render::Framebuffer::new(
+        config.width,
+        config.height,
+        config.background,
+        config.background_color,
+    );
+    let image = fb.into_image(config.aa);
+
+    // Write output
+    if config.output.to_str() == Some("-") {
+        output::write_png_to_stdout(&image)?;
+    } else {
+        output::write_png(&image, &config.output)?;
+    }
+
+    // Write metadata if requested
+    let dims = bounds.dimensions();
+    let metadata = RenderMetadata {
+        input_file: config.input.to_string_lossy().to_string(),
+        triangle_count,
+        bounding_box: bounds,
+        dimensions: [dims.x, dims.y, dims.z],
+    };
+
+    if let Some(ref meta_path) = config.metadata_path {
+        output::write_metadata(&metadata, meta_path)?;
+    }
+
+    Ok(metadata)
 }

@@ -31,6 +31,25 @@ pub fn write_png(image: &RgbaImage, path: &Path) -> Result<(), OutputError> {
     Ok(())
 }
 
+pub fn write_png_to_stdout(image: &RgbaImage) -> Result<(), OutputError> {
+    use image::ImageEncoder;
+    use std::io::Write;
+
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+
+    let encoder = image::codecs::png::PngEncoder::new(&mut handle);
+    encoder.write_image(
+        image.as_raw(),
+        image.width(),
+        image.height(),
+        image::ExtendedColorType::Rgba8,
+    )?;
+
+    handle.flush()?;
+    Ok(())
+}
+
 pub fn write_metadata(meta: &RenderMetadata, path: &Path) -> Result<(), OutputError> {
     let json = serde_json::to_string_pretty(meta)?;
     std::fs::write(path, json)?;

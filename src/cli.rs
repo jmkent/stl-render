@@ -237,6 +237,75 @@ fn parse_hex_color(s: &str) -> [u8; 3] {
 mod tests {
     use super::*;
 
+    fn make_args(args: &[&str]) -> Args {
+        Args::parse_from(args)
+    }
+
+    #[test]
+    fn test_parse_minimal_args() {
+        let args = make_args(&["stl-render", "input.stl", "-o", "out.png"]);
+        assert_eq!(args.input, PathBuf::from("input.stl"));
+        assert_eq!(args.output, PathBuf::from("out.png"));
+        assert_eq!(args.width, 512);
+        assert_eq!(args.height, 512);
+    }
+
+    #[test]
+    fn test_parse_all_flags() {
+        let args = make_args(&[
+            "stl-render",
+            "model.stl",
+            "-o", "render.png",
+            "--width", "1024",
+            "--height", "768",
+            "--view", "front",
+            "--padding", "0.1",
+            "--aa", "4x",
+            "--background", "solid",
+            "--background-color", "#ff0000",
+            "--material-color", "#00ff00",
+            "--lighting", "flat",
+            "--metadata", "meta.json",
+            "--quiet",
+        ]);
+        assert_eq!(args.width, 1024);
+        assert_eq!(args.height, 768);
+        assert_eq!(args.view, "front");
+        assert_eq!(args.padding, 0.1);
+        assert_eq!(args.aa, "4x");
+        assert_eq!(args.background, "solid");
+        assert!(args.quiet);
+    }
+
+    #[test]
+    fn test_build_config_minimal() {
+        let args = make_args(&["stl-render", "test.stl", "-o", "out.png"]);
+        let config = build_config(args).unwrap();
+        assert_eq!(config.input, PathBuf::from("test.stl"));
+        assert_eq!(config.output, PathBuf::from("out.png"));
+        assert_eq!(config.view, ViewConfig::Preset(ViewPreset::Iso));
+    }
+
+    #[test]
+    fn test_build_config_custom_view() {
+        let args = make_args(&[
+            "stl-render", "test.stl", "-o", "out.png",
+            "--azimuth", "45", "--elevation", "30",
+        ]);
+        let config = build_config(args).unwrap();
+        assert_eq!(config.view, ViewConfig::Custom { azimuth: 45.0, elevation: 30.0 });
+    }
+
+    #[test]
+    fn test_build_config_incomplete_custom_view() {
+        let args = make_args(&[
+            "stl-render", "test.stl", "-o", "out.png",
+            "--azimuth", "45",
+        ]);
+        let result = build_config(args);
+        assert!(matches!(result, Err(CliError::IncompleteCustomView)));
+    }
+
     #[test]
     fn test_parse_hex_color() {
         assert_eq!(parse_hex_color("#ff0000"), [255, 0, 0]);
@@ -256,5 +325,22 @@ mod tests {
     fn test_parse_background() {
         assert_eq!(parse_background("transparent"), Background::Transparent);
         assert_eq!(parse_background("solid"), Background::Solid);
+    }
+
+    #[test]
+    fn test_parse_view_presets() {
+        for (name, expected) in [
+            ("front", ViewPreset::Front),
+            ("back", ViewPreset::Back),
+            ("left", ViewPreset::Left),
+            ("right", ViewPreset::Right),
+            ("top", ViewPreset::Top),
+            ("bottom", ViewPreset::Bottom),
+            ("iso", ViewPreset::Iso),
+        ] {
+            let args = make_args(&["stl-render", "t.stl", "-o", "o.png", "--view", name]);
+            let config = build_config(args).unwrap();
+            assert_eq!(config.view, ViewConfig::Preset(expected));
+        }
     }
 }
