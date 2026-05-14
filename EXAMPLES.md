@@ -17,7 +17,7 @@ stl-render model.stl -o preview.png
 | ![Benchy Blue Grey](examples/benchy_print_bluegrey.png) | ![Benchy Tan](examples/benchy_print_tan.png) |
 
 ```bash
-stl-render 3DBenchy.stl -o benchy.png --view print --material-color "#708090" --aa 4x
+stl-render 3DBenchy.stl -o benchy.png --view print --material-color blue-grey --aa 4x
 ```
 
 ## View Presets
@@ -31,7 +31,7 @@ The `print` view is designed for 3D printing previews. It uses Z-up orientation 
 | ![Cube Print](examples/hero_cube.png) | ![Sphere Print](examples/hero_sphere.png) | ![Cylinder Print](examples/hero_cylinder.png) |
 
 ```bash
-stl-render model.stl -o preview.png --view print --material-color "#C19A6B"
+stl-render model.stl -o preview.png --view print --material-color tan
 ```
 
 ### View Comparison
@@ -89,24 +89,40 @@ The grid layout is:
 
 ## Material Colors
 
-Use `--material-color` with hex colors to match common filament colors:
+Use `--material-color` with named presets or hex colors to match common filament colors:
 
 | Blue Grey (`#708090`) | Tan (`#C19A6B`) |
 |-----------------------|-----------------|
 | ![Blue Grey Sphere](examples/sphere_print_bluegrey.png) | ![Tan Sphere](examples/sphere_iso_tan.png) |
 
 ```bash
-stl-render model.stl -o preview.png --material-color "#708090"  # Blue grey
-stl-render model.stl -o preview.png --material-color "#C19A6B"  # Tan
+stl-render model.stl -o preview.png --material-color blue-grey  # Blue grey
+stl-render model.stl -o preview.png --material-color tan        # Tan
+stl-render model.stl -o preview.png --material-color "#ffcc00"  # Custom hex
 ```
 
-Other common filament colors:
-- White: `#FFFFFF`
-- Black: `#1A1A1A`
-- Red: `#CC3333`
-- Orange: `#FF6600`
-- Green: `#339933`
-- Blue: `#3366CC`
+Preset names are case insensitive. `grey` and `gray` are aliases.
+
+| Preset | Hex |
+|--------|-----|
+| `tan` | `#C19A6B` |
+| `blue-grey` | `#708090` |
+| `white` | `#FFFFFF` |
+| `black` | `#1A1A1A` |
+| `red` | `#CC3333` |
+| `orange` | `#FF6600` |
+| `green` | `#339933` |
+| `blue` | `#3366CC` |
+| `grey` / `gray` | `#808080` |
+| `silver` | `#C0C0C0` |
+
+Examples for fixture previews:
+
+```bash
+stl-render fixtures/cube.stl -o cube-tan.png --view print --material-color tan
+stl-render fixtures/sphere.stl -o sphere-silver.png --view iso --material-color silver
+stl-render fixtures/cylinder.stl -o cylinder-orange.png --view print --material-color orange
+```
 
 ## Lighting Presets
 
@@ -259,7 +275,7 @@ cat model.stl | stl-render - -o - | convert - thumbnail.jpg
 # High-quality print preview with custom color
 stl-render model.stl -o preview.png \
     --view print \
-    --material-color "#708090" \
+    --material-color blue-grey \
     --lighting studio \
     --aa 4x \
     --width 1024 \
@@ -276,7 +292,7 @@ stl-render model.stl -o preview.png \
 # Print grid for product listing
 stl-render model.stl -o grid.png \
     --view print-grid \
-    --material-color "#C19A6B" \
+    --material-color tan \
     --aa 4x \
     --width 1024 \
     --height 1024
@@ -284,6 +300,6 @@ stl-render model.stl -o grid.png \
 # Batch render all angles for documentation
 stl-render model.stl -o docs/ \
     --views front,back,left,right,top,print \
-    --material-color "#708090" \
+    --material-color blue-grey \
     --aa 2x
 ```

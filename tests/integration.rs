@@ -214,6 +214,11 @@ fn test_help_flag() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Render STL files to PNG"));
+    assert!(
+        stdout.contains("tan, blue-grey"),
+        "Help should list material color presets: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -322,6 +327,46 @@ fn test_material_color_red() {
         avg_r,
         avg_b
     );
+}
+
+#[test]
+fn test_material_color_presets_render_successfully() {
+    let dir = tempdir().unwrap();
+
+    for color in [
+        "tan",
+        "blue-grey",
+        "TAN",
+        "white",
+        "black",
+        "red",
+        "orange",
+        "green",
+        "blue",
+        "grey",
+        "gray",
+        "silver",
+        "#ff0000",
+    ] {
+        let output = dir
+            .path()
+            .join(format!("{}.png", color.replace('#', "hex-")));
+        let status = stl_render()
+            .args([
+                "fixtures/cube.stl",
+                "-o",
+                output.to_str().unwrap(),
+                "--material-color",
+                color,
+                "--aa",
+                "none",
+            ])
+            .status()
+            .unwrap();
+
+        assert!(status.success(), "{color} should render successfully");
+        assert!(output.exists(), "{color} should write output");
+    }
 }
 
 #[test]

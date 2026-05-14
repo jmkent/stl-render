@@ -41,7 +41,9 @@ pub enum CliError {
     #[error("invalid lighting preset '{0}' (expected flat, studio, or technical)")]
     InvalidLighting(String),
 
-    #[error("invalid color '{0}' (expected 6-digit hex color, for example #cccccc)")]
+    #[error(
+        "invalid color '{0}' (expected 6-digit hex color or preset: tan, blue-grey, white, black, red, orange, green, blue, grey, gray, silver)"
+    )]
     InvalidColor(String),
 }
 
@@ -98,7 +100,7 @@ pub struct Args {
     #[arg(long, default_value = "#ffffff")]
     pub background_color: String,
 
-    /// Material color (hex, e.g., #cccccc)
+    /// Material color (hex or preset: tan, blue-grey, white, black, red, orange, green, blue, grey/gray, silver)
     #[arg(long, default_value = "#cccccc")]
     pub material_color: String,
 
@@ -371,7 +373,7 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
     let aa = parse_aa(&args.aa)?;
     let background = parse_background(&args.background)?;
     let background_color = parse_hex_color(&args.background_color)?;
-    let material_color = parse_hex_color(&args.material_color)?;
+    let material_color = parse_color(&args.material_color)?;
     let lighting = parse_lighting(&args.lighting)?;
 
     Ok(BatchConfig {
@@ -459,6 +461,23 @@ fn parse_hex_color(s: &str) -> Result<[u8; 3], CliError> {
         return Ok([r, g, b]);
     }
     Err(CliError::InvalidColor(s.to_string()))
+}
+
+fn parse_color(s: &str) -> Result<[u8; 3], CliError> {
+    let normalized = s.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "tan" => Ok([193, 154, 107]),
+        "blue-grey" | "blue-gray" => Ok([112, 128, 144]),
+        "white" => Ok([255, 255, 255]),
+        "black" => Ok([26, 26, 26]),
+        "red" => Ok([204, 51, 51]),
+        "orange" => Ok([255, 102, 0]),
+        "green" => Ok([51, 153, 51]),
+        "blue" => Ok([51, 102, 204]),
+        "grey" | "gray" => Ok([128, 128, 128]),
+        "silver" => Ok([192, 192, 192]),
+        _ => parse_hex_color(s),
+    }
 }
 
 #[cfg(test)]
@@ -563,6 +582,60 @@ mod tests {
             parse_hex_color("invalid"),
             Err(CliError::InvalidColor(_))
         ));
+    }
+
+    #[test]
+    fn test_parse_color_presets() {
+        assert_eq!(parse_color("tan").unwrap(), [193, 154, 107]);
+        assert_eq!(parse_color("blue-grey").unwrap(), [112, 128, 144]);
+        assert_eq!(parse_color("TAN").unwrap(), [193, 154, 107]);
+        assert_eq!(parse_color("#ff0000").unwrap(), [255, 0, 0]);
+
+        for (name, expected) in [
+            ("tan", [193, 154, 107]),
+            ("blue-grey", [112, 128, 144]),
+            ("white", [255, 255, 255]),
+            ("black", [26, 26, 26]),
+            ("red", [204, 51, 51]),
+            ("orange", [255, 102, 0]),
+            ("green", [51, 153, 51]),
+            ("blue", [51, 102, 204]),
+            ("grey", [128, 128, 128]),
+            ("gray", [128, 128, 128]),
+            ("silver", [192, 192, 192]),
+        ] {
+            assert_eq!(parse_color(name).unwrap(), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn test_material_color_presets_in_config() {
+        for (name, expected) in [
+            ("tan", [193, 154, 107]),
+            ("blue-grey", [112, 128, 144]),
+            ("TAN", [193, 154, 107]),
+            ("#ff0000", [255, 0, 0]),
+            ("white", [255, 255, 255]),
+            ("black", [26, 26, 26]),
+            ("red", [204, 51, 51]),
+            ("orange", [255, 102, 0]),
+            ("green", [51, 153, 51]),
+            ("blue", [51, 102, 204]),
+            ("grey", [128, 128, 128]),
+            ("gray", [128, 128, 128]),
+            ("silver", [192, 192, 192]),
+        ] {
+            let args = make_args(&[
+                "stl-render",
+                "test.stl",
+                "-o",
+                "out.png",
+                "--material-color",
+                name,
+            ]);
+            let config = build_batch_config(args).unwrap();
+            assert_eq!(config.material_color, expected, "{name}");
+        }
     }
 
     #[test]

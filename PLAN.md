@@ -436,7 +436,7 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 
 ---
 
-### M12: Material Color Presets
+### M12: Material Color Presets ✓
 
 **Goal:** Named presets for common filament colors + hex support.
 
@@ -455,15 +455,15 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 | grey/gray | #808080 | [128, 128, 128] |
 | silver | #C0C0C0 | [192, 192, 192] |
 
-- [ ] **Test:** `--material-color tan` produces correct RGB
-- [ ] **Test:** `--material-color blue-grey` produces correct RGB
-- [ ] **Test:** `--material-color TAN` works (case insensitive)
-- [ ] **Test:** `--material-color "#ff0000"` still works (hex fallback)
-- [ ] **Test:** all 10 presets produce correct values
-- [ ] Implement `parse_color()` with preset lookup + hex fallback
-- [ ] Update CLI help to list available presets
+- [x] **Test:** `--material-color tan` produces correct RGB
+- [x] **Test:** `--material-color blue-grey` produces correct RGB
+- [x] **Test:** `--material-color TAN` works (case insensitive)
+- [x] **Test:** `--material-color "#ff0000"` still works (hex fallback)
+- [x] **Test:** all 10 presets produce correct values
+- [x] Implement `parse_color()` with preset lookup + hex fallback
+- [x] Update CLI help to list available presets
 
-**Acceptance:** `--material-color tan` works; hex colors still work.
+**Acceptance:** `--material-color tan` works; hex colors still work. ✓
 
 ---
 

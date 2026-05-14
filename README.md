@@ -42,7 +42,7 @@ cargo build --release
 stl-render model.stl -o preview.png
 
 # Print bed view with tan filament color
-stl-render model.stl -o preview.png --view print --material-color "#C19A6B"
+stl-render model.stl -o preview.png --view print --material-color tan
 
 # High quality render
 stl-render model.stl -o preview.png --view print --aa 4x --width 1024 --height 1024
@@ -101,6 +101,18 @@ stl-render model.stl -o preview.png --view print-grid
 --lighting technical  # Uniform multi-directional
 ```
 
+## Material Colors
+
+Use named filament presets or any 6-digit hex color:
+
+```bash
+stl-render model.stl -o preview.png --material-color tan
+stl-render model.stl -o preview.png --material-color blue-grey
+stl-render model.stl -o preview.png --material-color "#ffcc00"
+```
+
+Available presets: `tan`, `blue-grey`, `white`, `black`, `red`, `orange`, `green`, `blue`, `grey`/`gray`, `silver`. Preset names are case insensitive.
+
 ## More Examples
 
 See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
@@ -133,7 +145,7 @@ Options:
       --aa <LEVEL>              Anti-aliasing: none|2x|4x [default: 2x]
       --background <TYPE>       Background: transparent|solid [default: transparent]
       --background-color <HEX>  Background color for solid [default: #ffffff]
-      --material-color <HEX>    Model color [default: #cccccc]
+      --material-color <COLOR>  Model color: hex or preset [default: #cccccc]
       --lighting <PRESET>       Lighting: flat|studio|technical [default: studio]
       --metadata <PATH>         Write render metadata JSON
       --strict                  Abort on first error (default: continue processing)
@@ -180,6 +192,19 @@ Test STL files are generated using Python/numpy-stl (optional, only for regenera
 ```bash
 cd tools/fixtures
 uv run generate_fixtures.py -o ../../fixtures
+```
+
+### Regenerate Example Renders
+
+The checked-in example PNGs can be regenerated from fixtures and the local 3DBenchy reference:
+
+```bash
+cargo run --release -- ~/3dprinting/3dbenchy/files/3DBenchy.stl \
+  -o examples/benchy_print_tan.png --view print --material-color tan --aa 4x
+cargo run --release -- ~/3dprinting/3dbenchy/files/3DBenchy.stl \
+  -o examples/benchy_print_bluegrey.png --view print --material-color blue-grey --aa 4x
+cargo run --release -- fixtures/cube.stl \
+  -o examples/cube_iso_bluegrey.png --view iso --material-color blue-grey
 ```
 
 ### Project Structure
