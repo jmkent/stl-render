@@ -55,10 +55,10 @@ pub enum CliError {
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "stl-render")]
-#[command(about = "Render STL files to PNG images")]
+#[command(about = "Render STL and 3MF files to PNG images")]
 #[command(version)]
 pub struct Args {
-    /// Input STL file(s) - supports multiple files and glob patterns (use - for stdin)
+    /// Input mesh file(s) - STL or 3MF, supports multiple files and glob patterns (use - for stdin)
     #[arg(required = true)]
     pub inputs: Vec<PathBuf>,
 
@@ -219,7 +219,7 @@ pub enum LightingPreset {
     Technical,
 }
 
-/// Configuration for rendering an STL file to an image.
+/// Configuration for rendering a mesh file to an image.
 ///
 /// Use [`RenderConfigBuilder`] for ergonomic construction:
 ///
@@ -235,7 +235,7 @@ pub enum LightingPreset {
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderConfig {
-    /// Input STL file path (or "-" for stdin)
+    /// Input mesh file path - STL or 3MF (or "-" for stdin)
     pub input: PathBuf,
     /// Output PNG file path (or "-" for stdout)
     pub output: PathBuf,

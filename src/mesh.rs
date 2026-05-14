@@ -1,7 +1,8 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::stl::{StlError, StlReader, Triangle};
+use crate::stl::{StlError, Triangle};
+use crate::MeshReader;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct BoundingBox {
@@ -59,7 +60,7 @@ impl BoundingBox {
 
 /// Compute bounding box by streaming through all triangles.
 /// Does not store the mesh in memory.
-pub fn compute_bounds(reader: &StlReader) -> Result<(BoundingBox, u64), StlError> {
+pub fn compute_bounds(reader: &MeshReader) -> Result<(BoundingBox, u64), StlError> {
     let mut bounds = BoundingBox::new();
     let mut count = 0u64;
 
@@ -162,7 +163,7 @@ mod tests {
     fn test_compute_bounds_cube() {
         let path = Path::new("fixtures/cube.stl");
         if path.exists() {
-            let reader = StlReader::open(path).unwrap();
+            let reader = crate::MeshReader::open(path).unwrap();
             let (bounds, count) = compute_bounds(&reader).unwrap();
 
             assert_eq!(count, 12);
@@ -180,7 +181,7 @@ mod tests {
     fn test_compute_bounds_empty() {
         let path = Path::new("fixtures/empty.stl");
         if path.exists() {
-            let reader = StlReader::open(path).unwrap();
+            let reader = crate::MeshReader::open(path).unwrap();
             let (bounds, count) = compute_bounds(&reader).unwrap();
 
             assert_eq!(count, 0);
@@ -192,7 +193,7 @@ mod tests {
     fn test_compute_bounds_sphere() {
         let path = Path::new("fixtures/sphere.stl");
         if path.exists() {
-            let reader = StlReader::open(path).unwrap();
+            let reader = crate::MeshReader::open(path).unwrap();
             let (bounds, count) = compute_bounds(&reader).unwrap();
 
             assert_eq!(count, 1280);

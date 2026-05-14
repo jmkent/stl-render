@@ -38,6 +38,7 @@ pub mod mesh;
 pub mod output;
 pub mod render;
 pub mod stl;
+pub mod tmf3;
 
 // Re-export public types for library consumers
 pub use cli::{
@@ -47,8 +48,91 @@ pub use cli::{
 pub use mesh::BoundingBox;
 pub use output::{OutputError, RenderMetadata};
 pub use stl::{StlError, StlReader, Triangle};
+pub use tmf3::Tmf3Reader;
 
 use thiserror::Error;
+
+/// Unified mesh reader that supports both STL and 3MF formats.
+///
+/// Format is auto-detected from file content (not extension).
+pub enum MeshReader {
+    /// STL format (binary or ASCII)
+    Stl(StlReader),
+    /// 3MF format (ZIP with XML)
+    Tmf3(Tmf3Reader),
+}
+
+impl MeshReader {
+    /// Open a mesh file, auto-detecting format from content.
+    pub fn open(path: &std::path::Path) -> Result<Self, StlError> {
+        // Check for ZIP magic bytes (3MF)
+        let file = std::fs::File::open(path)?;
+        let mut header = [0u8; 4];
+        use std::io::Read;
+        let mut file = std::io::BufReader::new(file);
+        file.read_exact(&mut header)?;
+        drop(file);
+
+        if &header == b"PK\x03\x04" {
+            // ZIP file (3MF)
+            Ok(MeshReader::Tmf3(Tmf3Reader::open(path)?))
+        } else {
+            // Assume STL
+            Ok(MeshReader::Stl(StlReader::open(path)?))
+        }
+    }
+
+    /// Read a mesh from a reader, auto-detecting format from content.
+    pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self, StlError> {
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data)?;
+
+        if data.is_empty() {
+            return Err(StlError::InvalidFormat("empty input".into()));
+        }
+
+        if data.starts_with(b"PK\x03\x04") {
+            // ZIP file (3MF)
+            let cursor = std::io::Cursor::new(data);
+            Ok(MeshReader::Tmf3(Tmf3Reader::from_reader(cursor)?))
+        } else {
+            // STL - recreate reader from data
+            Ok(MeshReader::Stl(StlReader::from_reader(std::io::Cursor::new(data))?))
+        }
+    }
+
+    /// Get an iterator over triangles.
+    pub fn triangles(&self) -> Result<MeshTriangleIter<'_>, StlError> {
+        match self {
+            MeshReader::Stl(r) => Ok(MeshTriangleIter::Stl(r.triangles()?)),
+            MeshReader::Tmf3(r) => Ok(MeshTriangleIter::Tmf3(r.triangles())),
+        }
+    }
+}
+
+/// Iterator over triangles from any supported mesh format.
+pub enum MeshTriangleIter<'a> {
+    Stl(stl::TriangleIter<'a>),
+    Tmf3(tmf3::Tmf3Iter<'a>),
+}
+
+impl Iterator for MeshTriangleIter<'_> {
+    type Item = Result<Triangle, StlError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            MeshTriangleIter::Stl(iter) => iter.next(),
+            MeshTriangleIter::Tmf3(iter) => iter.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            MeshTriangleIter::Stl(iter) => iter.size_hint(),
+            MeshTriangleIter::Tmf3(iter) => iter.size_hint(),
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum RenderError {
@@ -104,7 +188,7 @@ pub fn render_to_image(
     }
 
     // Parse STL and compute bounds (first pass)
-    let reader = open_stl_reader(config)?;
+    let reader = open_mesh_reader(config)?;
     let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
     validate_renderable_geometry(&bounds, triangle_count)?;
 
@@ -170,7 +254,7 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
 
 fn render_single_view(
     config: &RenderConfig,
-    reader: &StlReader,
+    reader: &MeshReader,
     bounds: &BoundingBox,
 ) -> Result<image::RgbaImage, RenderError> {
     use cli::ViewConfig;
@@ -224,7 +308,7 @@ fn render_print_grid_to_image(
     use image::{GenericImage, RgbaImage};
 
     // Parse STL and compute bounds
-    let reader = open_stl_reader(config)?;
+    let reader = open_mesh_reader(config)?;
     let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
     validate_renderable_geometry(&bounds, triangle_count)?;
 
@@ -313,9 +397,9 @@ fn render_print_grid_to_image(
     Ok((composite, metadata))
 }
 
-fn open_stl_reader(config: &RenderConfig) -> Result<StlReader, RenderError> {
+fn open_mesh_reader(config: &RenderConfig) -> Result<MeshReader, RenderError> {
     if config.input.to_str() == Some("-") {
-        return Ok(StlReader::from_reader(std::io::stdin())?);
+        return Ok(MeshReader::from_reader(std::io::stdin())?);
     }
 
     if !config.input.exists() {
@@ -325,7 +409,7 @@ fn open_stl_reader(config: &RenderConfig) -> Result<StlReader, RenderError> {
         ))));
     }
 
-    Ok(StlReader::open(&config.input)?)
+    Ok(MeshReader::open(&config.input)?)
 }
 
 fn validate_renderable_geometry(

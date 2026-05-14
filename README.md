@@ -1,9 +1,10 @@
 # stl-render
 
-A fast, headless CLI tool to render STL files to PNG images.
+A fast, headless CLI tool to render STL and 3MF files to PNG images.
 
 ```bash
 stl-render model.stl -o preview.png
+stl-render model.3mf -o preview.png
 ```
 
 | 3DBenchy, Blue Grey, Print View                           | 3DBenchy, Tan, Print View                      |
@@ -15,10 +16,11 @@ stl-render model.stl -o preview.png
 ## Features
 
 - **Headless:** No GPU or display required. Works in CI, containers, scripts.
+- **Multiple formats:** STL (binary/ASCII) and 3MF with auto-detection.
 - **Deterministic:** Same input + flags = identical output bytes.
 - **Handles large files:** Streams 500MB+ STLs with bounded memory.
 - **Print-ready:** `--view print` shows models in Z-up orientation for 3D printing.
-- **Simple:** One STL in, one PNG out. No configuration files.
+- **Simple:** One mesh in, one PNG out. No configuration files.
 
 ## Installation
 
@@ -47,6 +49,16 @@ stl-render model.stl -o preview.png --view print --material-color tan
 # High quality render
 stl-render model.stl -o preview.png --view print --aa 4x --width 1024 --height 1024
 ```
+
+## Supported Formats
+
+| Format | Extensions | Notes |
+|--------|------------|-------|
+| STL Binary | .stl | Fastest, most common |
+| STL ASCII | .stl | Auto-detected from content |
+| 3MF | .3mf | ZIP with XML mesh data, multi-object support |
+
+Format is auto-detected from file content (magic bytes), not extension. Multi-object 3MF files render all objects merged into a single view.
 
 ## View Presets
 
@@ -131,7 +143,7 @@ See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
 stl-render <INPUT>... -o <OUTPUT> [OPTIONS]
 
 Arguments:
-  <INPUT>...  STL file(s) - supports multiple files
+  <INPUT>...  Mesh file(s) - STL or 3MF, supports multiple files
 
 Options:
   -o, --output <PATH>           Output PNG path or directory (use trailing / for directory)
@@ -166,10 +178,10 @@ View presets:
 |------|---------|
 | 0 | Success |
 | 1 | Usage error (bad arguments) |
-| 2 | Input error (can't read/parse STL) |
+| 2 | Input error (can't read/parse mesh file) |
 | 3 | Output error (can't write PNG) |
 
-Zero-triangle STL files are valid STL containers, but `stl-render` rejects them for rendering with exit code 2 because there is no geometry to frame or describe in metadata.
+Empty mesh files (zero triangles) are rejected with exit code 2 because there is no geometry to frame or describe in metadata.
 
 ## Development
 
@@ -188,7 +200,7 @@ cargo clippy
 
 ### Generate Test Fixtures
 
-Test STL files are generated using Python/numpy-stl (optional, only for regenerating fixtures):
+Test mesh files (STL and 3MF) are generated using Python (optional, only for regenerating fixtures):
 
 ```bash
 cd tools/fixtures
@@ -215,14 +227,15 @@ src/
   main.rs           # Entry point
   cli.rs            # Argument parsing
   stl/              # STL parsing (streaming, mmap)
+  tmf3/             # 3MF parsing (ZIP/XML)
   mesh.rs           # Bounding box, normals
   camera.rs         # View transforms, projection
   render.rs         # Software rasterizer
   output.rs         # PNG encoding
-  lib.rs            # Public API
+  lib.rs            # Public API, MeshReader
 
 examples/           # Rendered example images
-fixtures/           # Test STL files
+fixtures/           # Test mesh files (STL and 3MF)
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.

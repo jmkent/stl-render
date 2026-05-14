@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Generate STL test fixtures for stl-render.
+"""Generate STL and 3MF test fixtures for stl-render.
 
-Creates basic geometric shapes as both binary and ASCII STL files.
+Creates basic geometric shapes as binary STL, ASCII STL, and 3MF files.
 """
 
 import argparse
+import io
 import math
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import numpy as np
 import stl
@@ -197,6 +200,115 @@ def save_stl(m: mesh.Mesh, path: Path, ascii_format: bool = False):
     print(f"  {path.name}: {len(m.vectors)} triangles")
 
 
+def mesh_to_3mf_model_xml(meshes: list[tuple[str, mesh.Mesh]]) -> bytes:
+    """Convert mesh(es) to 3MF model XML content.
+
+    Args:
+        meshes: List of (name, mesh) tuples. Each becomes a separate object.
+
+    Returns:
+        UTF-8 encoded XML bytes.
+    """
+    NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
+
+    # Create root element with namespace
+    model = ET.Element("model")
+    model.set("unit", "millimeter")
+    model.set("xmlns", NS)
+
+    resources = ET.SubElement(model, "resources")
+    build = ET.SubElement(model, "build")
+
+    for obj_id, (name, m) in enumerate(meshes, start=1):
+        # Collect unique vertices and build index map
+        vertices = []
+        vertex_map = {}
+        triangles = []
+
+        for tri_verts in m.vectors:
+            tri_indices = []
+            for v in tri_verts:
+                key = (round(v[0], 6), round(v[1], 6), round(v[2], 6))
+                if key not in vertex_map:
+                    vertex_map[key] = len(vertices)
+                    vertices.append(key)
+                tri_indices.append(vertex_map[key])
+            triangles.append(tuple(tri_indices))
+
+        # Create object element
+        obj = ET.SubElement(resources, "object")
+        obj.set("id", str(obj_id))
+        obj.set("type", "model")
+        if name:
+            obj.set("name", name)
+
+        mesh_elem = ET.SubElement(obj, "mesh")
+
+        # Vertices
+        verts_elem = ET.SubElement(mesh_elem, "vertices")
+        for x, y, z in vertices:
+            v = ET.SubElement(verts_elem, "vertex")
+            v.set("x", f"{x:.6g}")
+            v.set("y", f"{y:.6g}")
+            v.set("z", f"{z:.6g}")
+
+        # Triangles
+        tris_elem = ET.SubElement(mesh_elem, "triangles")
+        for v1, v2, v3 in triangles:
+            t = ET.SubElement(tris_elem, "triangle")
+            t.set("v1", str(v1))
+            t.set("v2", str(v2))
+            t.set("v3", str(v3))
+
+        # Add to build
+        item = ET.SubElement(build, "item")
+        item.set("objectid", str(obj_id))
+
+    # Generate XML with declaration
+    xml_decl = b'<?xml version="1.0" encoding="UTF-8"?>\n'
+    tree = ET.ElementTree(model)
+    buf = io.BytesIO()
+    tree.write(buf, encoding="UTF-8", xml_declaration=False)
+    return xml_decl + buf.getvalue()
+
+
+def save_3mf(meshes: list[tuple[str, mesh.Mesh]], path: Path):
+    """Save mesh(es) to 3MF file.
+
+    Args:
+        meshes: List of (name, mesh) tuples. Use [("", mesh)] for single object.
+        path: Output file path.
+    """
+    # Content types XML
+    content_types = b'''<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>'''
+
+    # Relationships XML
+    rels = b'''<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>'''
+
+    # Model XML
+    model_xml = mesh_to_3mf_model_xml(meshes)
+
+    # Create ZIP archive
+    with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("3D/3dmodel.model", model_xml)
+
+    total_triangles = sum(len(m.vectors) for _, m in meshes)
+    obj_count = len(meshes)
+    if obj_count == 1:
+        print(f"  {path.name}: {total_triangles} triangles")
+    else:
+        print(f"  {path.name}: {total_triangles} triangles ({obj_count} objects)")
+
+
 def create_large_sphere(target_triangles: int) -> mesh.Mesh:
     """Create a sphere with approximately target_triangles triangles.
 
@@ -259,6 +371,29 @@ def main():
     for name, m in ascii_shapes:
         save_stl(m, output_dir / name, ascii_format=True)
 
+    # 3MF files
+    print("\n3MF files:")
+    tmf3_shapes = [
+        ("cube.3mf", [("cube", create_cube())]),
+        ("sphere.3mf", [("sphere", create_sphere(subdivisions=args.sphere_subdivisions))]),
+        ("single_triangle.3mf", [("triangle", create_single_triangle())]),
+    ]
+
+    for name, meshes in tmf3_shapes:
+        save_3mf(meshes, output_dir / name)
+
+    # Multi-object 3MF (multiple objects in one file)
+    print("\n3MF multi-object files:")
+    multi_objects = [
+        ("cube", create_cube()),
+        ("small_sphere", create_sphere(radius=0.3, subdivisions=2)),
+    ]
+    # Offset the sphere so they don't overlap
+    sphere_mesh = multi_objects[1][1]
+    for i in range(len(sphere_mesh.vectors)):
+        sphere_mesh.vectors[i] += np.array([1.5, 0, 0])
+    save_3mf(multi_objects, output_dir / "multi_object.3mf")
+
     # Create an empty STL (just header, 0 triangles) - manually
     empty_path = output_dir / "empty.stl"
     with open(empty_path, "wb") as f:
@@ -275,7 +410,20 @@ def main():
         f.write(b"\x00" * 25)  # but only half a triangle of data
     print(f"  truncated.stl: invalid (truncated data)")
 
-    total_files = len(shapes) + len(ascii_shapes) + 2
+    # Create malformed 3MF (not a valid ZIP)
+    malformed_3mf_path = output_dir / "malformed.3mf"
+    with open(malformed_3mf_path, "wb") as f:
+        f.write(b"This is not a ZIP file")
+    print(f"  malformed.3mf: invalid (not a ZIP)")
+
+    # Create 3MF with missing model file
+    missing_model_3mf_path = output_dir / "missing_model.3mf"
+    with zipfile.ZipFile(missing_model_3mf_path, 'w') as zf:
+        zf.writestr("[Content_Types].xml", b"<Types/>")
+        # Intentionally missing 3D/3dmodel.model
+    print(f"  missing_model.3mf: invalid (missing model file)")
+
+    total_files = len(shapes) + len(ascii_shapes) + len(tmf3_shapes) + 1 + 4  # +1 for multi_object, +4 for special files
 
     # Generate large files for performance testing (optional)
     if args.large:

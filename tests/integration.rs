@@ -213,7 +213,7 @@ fn test_help_flag() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Render STL files to PNG"));
+    assert!(stdout.contains("Render STL and 3MF files to PNG"));
     assert!(
         stdout.contains("tan, blue-grey"),
         "Help should list material color presets: {}",
@@ -1488,9 +1488,7 @@ fn test_render_to_image_with_print_grid() {
 fn test_library_exports_all_types() {
     // This test verifies that all expected types are exported from the library
     use stl_render::{
-        AntiAliasing, Background, BatchConfig, BoundingBox, LightingPreset, OutputError,
-        RenderConfig, RenderConfigBuilder, RenderError, RenderMetadata, StlError, StlReader,
-        Triangle, ViewConfig, ViewPreset,
+        AntiAliasing, Background, LightingPreset, MeshReader, Tmf3Reader, ViewPreset,
     };
 
     // Just verify they exist and can be named
@@ -1498,4 +1496,179 @@ fn test_library_exports_all_types() {
     let _: fn() -> Background = || Background::Transparent;
     let _: fn() -> LightingPreset = || LightingPreset::Studio;
     let _: fn() -> ViewPreset = || ViewPreset::Iso;
+
+    // Verify mesh reader types are exported
+    let _ = |path: &std::path::Path| MeshReader::open(path);
+    let _ = |path: &std::path::Path| Tmf3Reader::open(path);
+}
+
+// =============================================================================
+// 3MF Format Tests
+// =============================================================================
+
+#[test]
+fn test_render_3mf_cube() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.png");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.3mf", "-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 512);
+    assert_eq!(img.height(), 512);
+}
+
+#[test]
+fn test_render_3mf_sphere() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("sphere.png");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/sphere.3mf", "-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_render_3mf_multi_object() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("multi.png");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/multi_object.3mf", "-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_3mf_with_all_view_presets() {
+    let dir = tempfile::tempdir().unwrap();
+
+    for view in ["iso", "front", "top", "print", "print-front", "print-grid"] {
+        let output = dir.path().join(format!("{}.png", view));
+
+        let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+            .args(["fixtures/cube.3mf", "-o"])
+            .arg(&output)
+            .args(["--view", view])
+            .status()
+            .unwrap();
+
+        assert!(status.success(), "view {} failed", view);
+        assert!(output.exists(), "view {} produced no output", view);
+    }
+}
+
+#[test]
+fn test_3mf_stl_produce_same_output() {
+    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
+
+    let stl_config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+
+    let tmf3_config = RenderConfigBuilder::new("fixtures/cube.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+
+    let (stl_image, stl_meta) = render_to_image(&stl_config).unwrap();
+    let (tmf3_image, tmf3_meta) = render_to_image(&tmf3_config).unwrap();
+
+    assert_eq!(stl_meta.triangle_count, tmf3_meta.triangle_count);
+    assert_eq!(stl_image.width(), tmf3_image.width());
+    assert_eq!(stl_image.height(), tmf3_image.height());
+}
+
+#[test]
+fn test_3mf_format_autodetected() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.png");
+
+    // Copy 3mf to a file with .stl extension - should still work due to content detection
+    let misnamed = dir.path().join("cube.stl");
+    std::fs::copy("fixtures/cube.3mf", &misnamed).unwrap();
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .arg(&misnamed)
+        .args(["-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_3mf_in_batch_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir(&output_dir).unwrap();
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.3mf", "fixtures/sphere.3mf", "-o"])
+        .arg(&output_dir)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output_dir.join("cube.png").exists());
+    assert!(output_dir.join("sphere.png").exists());
+}
+
+#[test]
+fn test_malformed_3mf_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.png");
+
+    let output_result = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/malformed.3mf", "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+
+    assert!(!output_result.status.success());
+    let stderr = String::from_utf8_lossy(&output_result.stderr);
+    assert!(
+        stderr.contains("invalid") || stderr.contains("ZIP") || stderr.contains("error"),
+        "expected error message about invalid 3MF, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_missing_model_3mf_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.png");
+
+    let output_result = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/missing_model.3mf", "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+
+    assert!(!output_result.status.success());
+    let stderr = String::from_utf8_lossy(&output_result.stderr);
+    assert!(
+        stderr.contains("model") || stderr.contains("3dmodel") || stderr.contains("missing"),
+        "expected error about missing model file, got: {}",
+        stderr
+    );
 }
