@@ -486,6 +486,207 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 
 ---
 
+### M14: 3MF Format Support
+
+**Goal:** Parse 3MF files (ZIP archives with XML mesh data) using existing triangle streaming architecture.
+
+#### Background
+
+3MF is a modern 3D printing format: ZIP archive containing XML mesh data. Unlike streaming STL, 3MF must be decompressed fully, but the iterator interface remains identical.
+
+#### New Module Structure
+
+```
+src/3mf/
+├── mod.rs       # Tmf3Reader, public interface
+└── parser.rs    # XML parsing, ZIP extraction
+```
+
+#### Core Implementation
+
+**Tmf3Reader**:
+```rust
+pub struct Tmf3Reader {
+    triangles: Vec<Triangle>,  // Buffered (can't stream ZIP)
+}
+
+impl Tmf3Reader {
+    pub fn open(path: &Path) -> Result<Self, StlError>;
+    pub fn triangles(&self) -> Tmf3Iter;
+    pub fn triangle_count(&self) -> u64;
+}
+```
+
+**Extend existing enums**:
+- `StlFormat`: add `Tmf3` variant
+- `TriangleIter`: add `Tmf3(std::slice::Iter<'a, Triangle>)` variant
+- `StlError`: add `ZipError`, `Tmf3ParseError` variants
+
+**Format detection**: Check for ZIP magic bytes `PK\x03\x04`
+
+**Multi-object handling**: Merge all `<object>` elements into single triangle stream.
+
+#### Dependencies
+
+```toml
+zip = "2"
+quick-xml = "0.37"
+```
+
+#### Test Plan
+
+- [ ] Parse minimal 3MF with single triangle
+- [ ] Parse 3MF with multiple triangles
+- [ ] Parse 3MF with multiple objects (merged)
+- [ ] Error on malformed ZIP / missing model file
+- [ ] `stl-render model.3mf -o out.png` renders correctly
+- [ ] Works with all view presets and batch mode
+- [ ] Format auto-detected from content, not extension
+
+#### Fixtures
+
+- [ ] `fixtures/cube.3mf` - 12 triangles
+- [ ] `fixtures/multi_object.3mf` - multiple objects
+
+**Acceptance:** `stl-render cube.3mf -o cube.png` produces identical output to `cube.stl`; multi-object files render all geometry merged.
+
+---
+
+### M15: Animated GIF Output
+
+**Goal:** Generate rotating animation of print bed view as GIF, using 16 orientations for smooth 360° rotation.
+
+#### CLI Interface
+
+```bash
+# Explicit animation flag required
+stl-render model.stl -o preview.gif --animate
+
+# Custom parameters
+stl-render model.stl -o preview.gif --animate --frames 36 --frame-delay 50
+```
+
+**New flags**:
+- `--animate` - Enable animated GIF output (required for GIF)
+- `--frames <N>` - Number of frames (default: 16)
+- `--frame-delay <MS>` - Milliseconds per frame (default: 100)
+
+**Note**: No auto-detection from `.gif` extension - explicit `--animate` flag required to avoid complicating batch mode output path logic.
+
+#### Implementation
+
+**Enable GIF in Cargo.toml**:
+```toml
+image = { version = "0.25", features = ["png", "gif"] }
+```
+
+**New output function** (`src/output.rs`):
+```rust
+pub fn write_gif(
+    frames: &[RgbaImage],
+    path: &Path,
+    frame_delay_ms: u16,
+) -> Result<(), OutputError>;
+```
+
+**New render function** (`src/lib.rs`):
+```rust
+pub fn render_animated(
+    config: &RenderConfig,
+    frame_count: u32,
+    frame_delay_ms: u16,
+) -> Result<RenderMetadata, RenderError> {
+    // Parse input once, compute bounds once
+    // Loop frame_count times:
+    //   azimuth = (i / frame_count) * 360.0
+    //   render frame at this azimuth using from_print_view_with_azimuth()
+    // Encode all frames to GIF
+}
+```
+
+#### Animation Parameters
+
+| Frames | Step | Duration | Notes |
+|--------|------|----------|-------|
+| 8 | 45° | 0.8s | Quick preview |
+| 16 | 22.5° | 1.6s | Default, smooth |
+| 36 | 10° | 3.6s | High quality |
+
+#### Test Plan
+
+- [ ] `--animate` flag required for GIF output
+- [ ] `--animate` without `.gif` extension still works (writes GIF format)
+- [ ] `--frames 8` produces 8-frame GIF
+- [ ] `--frame-delay 200` produces slower animation
+- [ ] GIF loops infinitely
+- [ ] GIF output to stdout works
+- [ ] Works with all material colors and lighting presets
+- [ ] Animation rotates smoothly, Z-up maintained throughout
+
+**Acceptance:** `stl-render model.stl -o preview.gif` produces 16-frame rotating animation; rotation smooth and completes exactly 360° per loop.
+
+---
+
+### M16: Release Packaging
+
+**Goal:** Automated release pipeline with cross-platform binaries and crates.io publishing.
+
+#### Workflow Trigger
+
+```yaml
+on:
+  push:
+    tags:
+      - 'v[0-9]+.*'
+```
+
+#### Build Targets
+
+| Target | OS | Archive |
+|--------|-------|---------|
+| `x86_64-unknown-linux-gnu` | ubuntu-latest | .tar.gz |
+| `x86_64-unknown-linux-musl` | ubuntu-latest | .tar.gz |
+| `aarch64-unknown-linux-gnu` | ubuntu-latest | .tar.gz |
+| `x86_64-apple-darwin` | macos-latest | .tar.gz |
+| `aarch64-apple-darwin` | macos-latest | .tar.gz |
+| `x86_64-pc-windows-msvc` | windows-latest | .zip |
+
+#### Release Artifacts
+
+- Platform binaries: `stl-render-{version}-{target}.tar.gz/.zip`
+- GitHub Release with changelog extracted from `CHANGELOG.md`
+- crates.io package
+
+#### Secrets Required
+
+- `CARGO_REGISTRY_TOKEN` for crates.io publish
+
+#### Files (already prepared)
+
+- `.github/workflows/release.yml` - Release workflow
+- `CHANGELOG.md` - Release notes
+- `Cargo.toml` - crates.io metadata and exclusions
+
+#### Release Process
+
+1. Update `version` in `Cargo.toml`
+2. Update `CHANGELOG.md` with release date
+3. Commit and tag: `git tag v0.2.0`
+4. Push: `git push origin main --tags`
+5. Workflow builds binaries, creates release, publishes to crates.io
+
+#### Test Plan
+
+- [ ] Dry-run workflow on test branch
+- [ ] All 6 targets build successfully
+- [ ] Changelog extraction works
+- [ ] Download and verify binaries on each platform
+- [ ] `cargo install stl-render` works after publish
+
+**Acceptance:** Push `v0.2.0` tag triggers workflow; all platforms build; GitHub Release and crates.io publish succeed.
+
+---
+
 ## Deferred Work
 
 Items considered but not implemented in the current milestone scope:
@@ -530,11 +731,13 @@ Golden images generated once rendering is stable. Workflow:
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 glam = "0.29"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif"] }  # gif added in M15
 memmap2 = "0.9"
+quick-xml = "0.37"  # M14: 3MF XML parsing
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+zip = "2"  # M14: 3MF ZIP handling
 
 [dev-dependencies]
 tempfile = "3"
