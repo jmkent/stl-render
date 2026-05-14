@@ -139,6 +139,7 @@ Options:
       --height <PX>             Image height [default: 512]
       --view <PRESET>           Single view preset
       --views <LIST>            Multiple views (comma-separated), outputs to directory
+  -r, --recursive               Recursively render .stl files from input directories
       --azimuth <DEG>           Camera azimuth angle (conflicts with --view)
       --elevation <DEG>         Camera elevation angle (conflicts with --view)
       --padding <RATIO>         Padding around model [default: 0.08]

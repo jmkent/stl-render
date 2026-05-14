@@ -45,6 +45,12 @@ pub enum CliError {
         "invalid color '{0}' (expected 6-digit hex color or preset: tan, blue-grey, white, black, red, orange, green, blue, grey, gray, silver)"
     )]
     InvalidColor(String),
+
+    #[error("failed to traverse input directory '{path}': {source}")]
+    RecursiveTraversal {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -75,6 +81,10 @@ pub struct Args {
     /// Multiple views (comma-separated): front,back,iso produces multiple outputs
     #[arg(long)]
     pub views: Option<String>,
+
+    /// Recursively render .stl files from input directories
+    #[arg(short, long)]
+    pub recursive: bool,
 
     /// Camera azimuth angle in degrees (conflicts with --view/--views)
     #[arg(long)]
@@ -186,9 +196,15 @@ pub struct RenderConfig {
     pub verbose: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchInput {
+    pub path: PathBuf,
+    pub output_relative: PathBuf,
+}
+
 #[derive(Debug, Clone)]
 pub struct BatchConfig {
-    pub inputs: Vec<PathBuf>,
+    pub inputs: Vec<BatchInput>,
     pub output_dir: Option<PathBuf>,
     pub output_file: Option<PathBuf>,
     pub views: Vec<ViewConfig>,
@@ -204,6 +220,7 @@ pub struct BatchConfig {
     pub quiet: bool,
     pub verbose: bool,
     pub strict: bool,
+    pub recursive: bool,
 }
 
 impl BatchConfig {
@@ -224,7 +241,7 @@ impl BatchConfig {
                 });
 
                 RenderConfig {
-                    input: input.clone(),
+                    input: input.path.clone(),
                     output,
                     width: self.width,
                     height: self.height,
@@ -243,15 +260,14 @@ impl BatchConfig {
         })
     }
 
-    fn compute_output_path(&self, input: &Path, view: ViewConfig) -> PathBuf {
+    fn compute_output_path(&self, input: &BatchInput, view: ViewConfig) -> PathBuf {
         if let Some(ref dir) = self.output_dir {
-            let stem = input.file_stem().unwrap_or_default().to_string_lossy();
-            if self.views.len() > 1 {
-                let view_name = view_config_name(view);
-                dir.join(format!("{}.{}.png", stem, view_name))
-            } else {
-                dir.join(format!("{}.png", stem))
-            }
+            dir.join(output_relative_path(
+                &input.output_relative,
+                view,
+                self.views.len() > 1,
+                "png",
+            ))
         } else {
             self.output_file
                 .clone()
@@ -259,21 +275,41 @@ impl BatchConfig {
         }
     }
 
-    fn compute_metadata_path(&self, input: &Path, view: ViewConfig) -> PathBuf {
+    fn compute_metadata_path(&self, input: &BatchInput, view: ViewConfig) -> PathBuf {
         if let Some(ref dir) = self.output_dir {
-            let stem = input.file_stem().unwrap_or_default().to_string_lossy();
-            if self.views.len() > 1 {
-                let view_name = view_config_name(view);
-                dir.join(format!("{}.{}.json", stem, view_name))
-            } else {
-                dir.join(format!("{}.json", stem))
-            }
+            dir.join(output_relative_path(
+                &input.output_relative,
+                view,
+                self.views.len() > 1,
+                "json",
+            ))
         } else {
             self.metadata_path
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("metadata.json"))
         }
     }
+}
+
+fn output_relative_path(
+    input_relative: &Path,
+    view: ViewConfig,
+    include_view: bool,
+    extension: &str,
+) -> PathBuf {
+    let mut output = input_relative.with_extension("");
+    let stem = output
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let file_name = if include_view {
+        format!("{}.{}.{}", stem, view_config_name(view), extension)
+    } else {
+        format!("{}.{}", stem, extension)
+    };
+    output.set_file_name(file_name);
+    output
 }
 
 fn view_config_name(view: ViewConfig) -> String {
@@ -346,7 +382,9 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         vec![ViewConfig::Preset(parse_view_preset(&args.view)?)]
     };
 
-    let is_batch = args.inputs.len() > 1 || views.len() > 1;
+    let has_recursive_dir = args.recursive && args.inputs.iter().any(|input| input.is_dir());
+    let inputs = expand_inputs(&args.inputs, args.recursive)?;
+    let is_batch = inputs.len() > 1 || views.len() > 1 || has_recursive_dir;
 
     // Validate stdin/stdout with batch mode
     if is_stdin && is_batch {
@@ -377,7 +415,7 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
     let lighting = parse_lighting(&args.lighting)?;
 
     Ok(BatchConfig {
-        inputs: args.inputs,
+        inputs,
         output_dir,
         output_file,
         views,
@@ -393,7 +431,83 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         quiet: args.quiet,
         verbose: args.verbose,
         strict: args.strict,
+        recursive: args.recursive,
     })
+}
+
+fn expand_inputs(inputs: &[PathBuf], recursive: bool) -> Result<Vec<BatchInput>, CliError> {
+    let mut expanded = Vec::new();
+
+    for input in inputs {
+        if recursive && input.is_dir() {
+            collect_stl_files(input, input, &mut expanded)?;
+        } else {
+            let output_relative = input
+                .file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| input.clone());
+            expanded.push(BatchInput {
+                path: input.clone(),
+                output_relative,
+            });
+        }
+    }
+
+    Ok(expanded)
+}
+
+fn collect_stl_files(
+    root: &Path,
+    dir: &Path,
+    expanded: &mut Vec<BatchInput>,
+) -> Result<(), CliError> {
+    let mut entries = std::fs::read_dir(dir)
+        .map_err(|source| CliError::RecursiveTraversal {
+            path: dir.to_path_buf(),
+            source,
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| CliError::RecursiveTraversal {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|source| CliError::RecursiveTraversal {
+                path: path.clone(),
+                source,
+            })?;
+
+        if file_type.is_dir() {
+            collect_stl_files(root, &path, expanded)?;
+        } else if file_type.is_file() && is_stl_path(&path) {
+            let output_relative = path
+                .strip_prefix(root)
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    path.file_name()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| path.clone())
+                });
+            expanded.push(BatchInput {
+                path,
+                output_relative,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn is_stl_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("stl"))
+        .unwrap_or(false)
 }
 
 fn parse_views_list(s: &str) -> Result<Vec<ViewPreset>, CliError> {
@@ -539,7 +653,13 @@ mod tests {
     fn test_build_batch_config_minimal() {
         let args = make_args(&["stl-render", "test.stl", "-o", "out.png"]);
         let config = build_batch_config(args).unwrap();
-        assert_eq!(config.inputs, vec![PathBuf::from("test.stl")]);
+        assert_eq!(
+            config.inputs,
+            vec![BatchInput {
+                path: PathBuf::from("test.stl"),
+                output_relative: PathBuf::from("test.stl"),
+            }]
+        );
         assert_eq!(config.output_file, Some(PathBuf::from("out.png")));
         assert_eq!(config.views, vec![ViewConfig::Preset(ViewPreset::Iso)]);
     }
@@ -747,6 +867,76 @@ mod tests {
         let config = build_batch_config(args).unwrap();
         assert_eq!(config.inputs.len(), 2);
         assert_eq!(config.output_dir, Some(PathBuf::from("output/")));
+    }
+
+    #[test]
+    fn test_recursive_expands_directory_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        let nested = root.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(root.join("cube.stl"), b"").unwrap();
+        std::fs::write(nested.join("sphere.STL"), b"").unwrap();
+        std::fs::write(nested.join("ignore.txt"), b"").unwrap();
+
+        let args = make_args(&[
+            "stl-render",
+            root.to_str().unwrap(),
+            "-o",
+            "output/",
+            "--recursive",
+        ]);
+        let config = build_batch_config(args).unwrap();
+
+        assert!(config.recursive);
+        assert_eq!(config.inputs.len(), 2);
+        assert!(config.inputs.contains(&BatchInput {
+            path: root.join("cube.stl"),
+            output_relative: PathBuf::from("cube.stl"),
+        }));
+        assert!(config.inputs.contains(&BatchInput {
+            path: nested.join("sphere.STL"),
+            output_relative: PathBuf::from("nested/sphere.STL"),
+        }));
+        assert_eq!(config.output_dir, Some(PathBuf::from("output/")));
+    }
+
+    #[test]
+    fn test_recursive_output_paths_preserve_subdirectories() {
+        let config = BatchConfig {
+            inputs: vec![BatchInput {
+                path: PathBuf::from("models/nested/cube.stl"),
+                output_relative: PathBuf::from("nested/cube.stl"),
+            }],
+            output_dir: Some(PathBuf::from("output")),
+            output_file: None,
+            views: vec![
+                ViewConfig::Preset(ViewPreset::Front),
+                ViewConfig::Preset(ViewPreset::Iso),
+            ],
+            width: 512,
+            height: 512,
+            padding: 0.08,
+            aa: AntiAliasing::X2,
+            background: Background::Transparent,
+            background_color: [255, 255, 255],
+            material_color: [204, 204, 204],
+            lighting: LightingPreset::Studio,
+            metadata_path: None,
+            quiet: false,
+            verbose: false,
+            strict: false,
+            recursive: true,
+        };
+
+        let outputs: Vec<_> = config.iter_jobs().map(|job| job.output).collect();
+        assert_eq!(
+            outputs,
+            vec![
+                PathBuf::from("output/nested/cube.front.png"),
+                PathBuf::from("output/nested/cube.iso.png"),
+            ]
+        );
     }
 
     #[test]

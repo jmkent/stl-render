@@ -219,6 +219,11 @@ fn test_help_flag() {
         "Help should list material color presets: {}",
         stdout
     );
+    assert!(
+        stdout.contains("--recursive"),
+        "Help should list recursive mode: {}",
+        stdout
+    );
 }
 
 #[test]
@@ -975,6 +980,85 @@ fn test_batch_reports_failed_conversion() {
         "Should show failed conversion line: {}",
         stderr
     );
+}
+
+#[test]
+fn test_batch_recursive_renders_nested_directories() {
+    let dir = tempdir().unwrap();
+    let input_root = dir.path().join("models");
+    let nested = input_root.join("nested");
+    let outdir = dir.path().join("output");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir(&outdir).unwrap();
+    std::fs::copy("fixtures/cube.stl", input_root.join("cube.stl")).unwrap();
+    std::fs::copy("fixtures/sphere.stl", nested.join("sphere.stl")).unwrap();
+    std::fs::write(nested.join("ignore.txt"), "not an stl").unwrap();
+
+    let output = stl_render()
+        .args([
+            input_root.to_str().unwrap(),
+            "-o",
+            &format!("{}/", outdir.display()),
+            "--recursive",
+            "--aa",
+            "none",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(outdir.join("cube.png").exists());
+    assert!(outdir.join("nested/sphere.png").exists());
+    assert!(!outdir.join("nested/ignore.png").exists());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            input_root.join("cube.stl").display(),
+            outdir.join("cube.png").display()
+        )),
+        "Should show root conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            nested.join("sphere.stl").display(),
+            outdir.join("nested/sphere.png").display()
+        )),
+        "Should show nested conversion line: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_batch_recursive_renders_multiple_views() {
+    let dir = tempdir().unwrap();
+    let input_root = dir.path().join("models");
+    let nested = input_root.join("nested");
+    let outdir = dir.path().join("output");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir(&outdir).unwrap();
+    std::fs::copy("fixtures/cube.stl", nested.join("cube.stl")).unwrap();
+
+    let status = stl_render()
+        .args([
+            input_root.to_str().unwrap(),
+            "-o",
+            &format!("{}/", outdir.display()),
+            "--recursive",
+            "--views",
+            "front,iso",
+            "--aa",
+            "none",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(outdir.join("nested/cube.front.png").exists());
+    assert!(outdir.join("nested/cube.iso.png").exists());
 }
 
 #[test]

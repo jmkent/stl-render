@@ -42,6 +42,11 @@ fn run() -> Result<(), RenderError> {
             eprintln!("[{}/{}] {} -> {}", idx + 1, total, input_name, output_name);
         }
 
+        ensure_parent_dir(&config.output)?;
+        if let Some(ref metadata_path) = config.metadata_path {
+            ensure_parent_dir(metadata_path)?;
+        }
+
         match stl_render::render(&config) {
             Ok(_metadata) => {
                 success_count += 1;
@@ -84,4 +89,14 @@ fn run() -> Result<(), RenderError> {
     } else {
         Ok(())
     }
+}
+
+fn ensure_parent_dir(path: &std::path::Path) -> Result<(), RenderError> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent).map_err(|e| RenderError::Output(OutputError::Io(e)))?;
+    }
+    Ok(())
 }

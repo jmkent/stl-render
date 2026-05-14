@@ -359,6 +359,9 @@ uv run generate_fixtures.py -o ../../fixtures --large
 - [x] **Test:** `stl-render *.stl -o outdir/` processes all files
 - [x] **Test:** output naming: `input.stl` → `outdir/input.png`
 - [x] Implement multiple positional args
+- [x] **Test:** `stl-render models/ -o outdir/ --recursive` traverses nested directories
+- [x] **Test:** recursive output preserves nested paths under output directory
+- [x] Implement `--recursive` / `-r` directory traversal
 
 #### Multiple Views
 - [x] **Test:** `--views front,back,iso` produces 3 PNGs per input

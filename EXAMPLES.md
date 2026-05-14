@@ -229,6 +229,23 @@ Rendered fixtures/cube.stl as output/cube.png successful
 Rendered fixtures/truncated.stl as output/truncated.png failed
 ```
 
+### Recursive Directories
+
+Render every `.stl` file under a directory tree:
+
+```bash
+stl-render models/ -o output/ --recursive
+stl-render models/ -o output/ --recursive --views front,iso,print
+```
+
+Nested input paths are preserved under the output directory:
+
+```text
+models/cube.stl -> output/cube.png
+models/parts/bracket.stl -> output/parts/bracket.png
+models/parts/bracket.stl --views front,iso -> output/parts/bracket.front.png, output/parts/bracket.iso.png
+```
+
 ### Multiple Views
 
 Generate multiple views of a single model:
