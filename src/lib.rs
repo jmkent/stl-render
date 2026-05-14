@@ -35,6 +35,7 @@
 pub mod camera;
 pub mod cli;
 pub mod mesh;
+pub mod obj;
 pub mod output;
 pub mod render;
 pub mod stl;
@@ -46,13 +47,14 @@ pub use cli::{
     ViewConfig, ViewPreset,
 };
 pub use mesh::BoundingBox;
+pub use obj::ObjReader;
 pub use output::{OutputError, RenderMetadata};
 pub use stl::{StlError, StlReader, Triangle};
 pub use tmf3::Tmf3Reader;
 
 use thiserror::Error;
 
-/// Unified mesh reader that supports both STL and 3MF formats.
+/// Unified mesh reader that supports STL, 3MF, and OBJ formats.
 ///
 /// Format is auto-detected from file content (not extension).
 pub enum MeshReader {
@@ -60,22 +62,28 @@ pub enum MeshReader {
     Stl(StlReader),
     /// 3MF format (ZIP with XML)
     Tmf3(Tmf3Reader),
+    /// OBJ format (text-based)
+    Obj(ObjReader),
 }
 
 impl MeshReader {
     /// Open a mesh file, auto-detecting format from content.
     pub fn open(path: &std::path::Path) -> Result<Self, StlError> {
-        // Check for ZIP magic bytes (3MF)
-        let file = std::fs::File::open(path)?;
-        let mut header = [0u8; 4];
         use std::io::Read;
+
+        // Read enough data for format detection
+        let file = std::fs::File::open(path)?;
         let mut file = std::io::BufReader::new(file);
-        file.read_exact(&mut header)?;
+        let mut header = [0u8; 512];
+        let bytes_read = file.read(&mut header).unwrap_or(0);
         drop(file);
 
-        if &header == b"PK\x03\x04" {
+        if bytes_read >= 4 && &header[..4] == b"PK\x03\x04" {
             // ZIP file (3MF)
             Ok(MeshReader::Tmf3(Tmf3Reader::open(path)?))
+        } else if obj::is_obj_format(&header[..bytes_read]) {
+            // OBJ file
+            Ok(MeshReader::Obj(ObjReader::open(path)?))
         } else {
             // Assume STL
             Ok(MeshReader::Stl(StlReader::open(path)?))
@@ -95,8 +103,12 @@ impl MeshReader {
             // ZIP file (3MF)
             let cursor = std::io::Cursor::new(data);
             Ok(MeshReader::Tmf3(Tmf3Reader::from_reader(cursor)?))
+        } else if obj::is_obj_format(&data) {
+            // OBJ file
+            let cursor = std::io::Cursor::new(data);
+            Ok(MeshReader::Obj(ObjReader::from_reader(cursor)?))
         } else {
-            // STL - recreate reader from data
+            // Assume STL
             Ok(MeshReader::Stl(StlReader::from_reader(std::io::Cursor::new(data))?))
         }
     }
@@ -106,6 +118,7 @@ impl MeshReader {
         match self {
             MeshReader::Stl(r) => Ok(MeshTriangleIter::Stl(r.triangles()?)),
             MeshReader::Tmf3(r) => Ok(MeshTriangleIter::Tmf3(r.triangles())),
+            MeshReader::Obj(r) => Ok(MeshTriangleIter::Obj(r.triangles())),
         }
     }
 }
@@ -114,6 +127,7 @@ impl MeshReader {
 pub enum MeshTriangleIter<'a> {
     Stl(stl::TriangleIter<'a>),
     Tmf3(tmf3::Tmf3Iter<'a>),
+    Obj(obj::ObjIter<'a>),
 }
 
 impl Iterator for MeshTriangleIter<'_> {
@@ -123,6 +137,7 @@ impl Iterator for MeshTriangleIter<'_> {
         match self {
             MeshTriangleIter::Stl(iter) => iter.next(),
             MeshTriangleIter::Tmf3(iter) => iter.next(),
+            MeshTriangleIter::Obj(iter) => iter.next(),
         }
     }
 
@@ -130,6 +145,7 @@ impl Iterator for MeshTriangleIter<'_> {
         match self {
             MeshTriangleIter::Stl(iter) => iter.size_hint(),
             MeshTriangleIter::Tmf3(iter) => iter.size_hint(),
+            MeshTriangleIter::Obj(iter) => iter.size_hint(),
         }
     }
 }

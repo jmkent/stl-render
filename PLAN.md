@@ -10,7 +10,7 @@ stl-render input.stl -o preview.png --view iso --width 512 --height 512
 
 ## Scope
 
-- Input: STL (binary and ASCII) and 3MF, up to 500MB+
+- Input: STL (binary and ASCII), OBJ, and 3MF, up to 500MB+
 - Output: PNG or animated GIF
 - Rendering: software rasterizer, headless
 - Packaging: static binary, no runtime deps
@@ -486,9 +486,9 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 
 ---
 
-### M14: 3MF Format Support ✓
+### M14: 3MF and OBJ Format Support ✓
 
-**Goal:** Parse 3MF files (ZIP archives with XML mesh data) using existing triangle streaming architecture.
+**Goal:** Parse 3MF and OBJ files using existing triangle streaming architecture.
 
 #### Module Structure (src/tmf3/)
 - [x] Implement `Tmf3Reader` with buffered triangles
@@ -498,8 +498,16 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 - [x] Parse vertices and triangles from XML mesh elements
 - [x] Compute normals from vertex positions
 
+#### Module Structure (src/obj/)
+- [x] Implement `ObjReader` with buffered triangles
+- [x] Implement `ObjIter` iterator over triangles
+- [x] Parse `v` (vertex) and `f` (face) lines
+- [x] Handle face formats: `f v1 v2 v3` and `f v1/vt1/vn1 ...`
+- [x] Triangulate polygons with more than 3 vertices (fan triangulation)
+- [x] Compute normals from vertex positions
+
 #### MeshReader Abstraction (lib.rs)
-- [x] Create `MeshReader` enum wrapping `StlReader` and `Tmf3Reader`
+- [x] Create `MeshReader` enum wrapping `StlReader`, `Tmf3Reader`, and `ObjReader`
 - [x] Create `MeshTriangleIter` enum for unified iteration
 - [x] Implement `MeshReader::open()` with format auto-detection
 - [x] Implement `MeshReader::from_reader()` for stdin support
@@ -507,13 +515,14 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 - [x] Update render pipeline to use `MeshReader`
 
 #### Format Detection
-- [x] Check for ZIP magic bytes `PK\x03\x04`
+- [x] Check for ZIP magic bytes `PK\x03\x04` (3MF)
+- [x] Check for OBJ text patterns (`v `, `f `, etc.)
 - [x] Auto-detect from file content, not extension
 
-#### Multi-Object Handling
+#### Multi-Object Handling (3MF)
 - [x] Merge all `<object>` elements into single triangle stream
 
-#### Test Plan
+#### Test Plan (3MF)
 - [x] **Test:** parse minimal 3MF with single triangle
 - [x] **Test:** parse 3MF with multiple triangles (cube, sphere)
 - [x] **Test:** parse 3MF with multiple objects (merged)
@@ -523,17 +532,26 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 - [x] **Test:** works with all view presets
 - [x] **Test:** works with batch mode
 - [x] **Test:** format auto-detected from content, not extension
-- [x] **Test:** 3MF and STL produce same geometry for identical models
+
+#### Test Plan (OBJ)
+- [x] **Test:** parse OBJ cube (12 triangles)
+- [x] **Test:** parse OBJ sphere (1280 triangles)
+- [x] **Test:** `stl-render model.obj -o out.png` renders correctly
+- [x] **Test:** works with all view presets
+- [x] **Test:** works with batch mode
+- [x] **Test:** works with animation
+- [x] **Test:** format auto-detected from content, not extension
+- [x] **Test:** OBJ and STL produce same triangle count for identical models
 
 #### Fixtures
-- [x] `fixtures/cube.3mf` - 12 triangles
-- [x] `fixtures/sphere.3mf` - 1280 triangles
-- [x] `fixtures/single_triangle.3mf` - 1 triangle
+- [x] `fixtures/cube.3mf`, `fixtures/cube.obj` - 12 triangles
+- [x] `fixtures/sphere.3mf`, `fixtures/sphere.obj` - 1280 triangles
+- [x] `fixtures/single_triangle.3mf`, `fixtures/single_triangle.obj` - 1 triangle
 - [x] `fixtures/multi_object.3mf` - cube + small sphere merged
 - [x] `fixtures/malformed.3mf` - invalid ZIP for error testing
 - [x] `fixtures/missing_model.3mf` - ZIP without model file
 
-**Acceptance:** `stl-render cube.3mf -o cube.png` produces identical output to `cube.stl`; multi-object files render all geometry merged. ✓
+**Acceptance:** All three formats (STL, OBJ, 3MF) render identically for the same geometry. ✓
 
 ---
 

@@ -1500,6 +1500,7 @@ fn test_library_exports_all_types() {
     // Verify mesh reader types are exported
     let _ = |path: &std::path::Path| MeshReader::open(path);
     let _ = |path: &std::path::Path| Tmf3Reader::open(path);
+    let _ = |path: &std::path::Path| stl_render::ObjReader::open(path);
 }
 
 // =============================================================================
@@ -1671,6 +1672,141 @@ fn test_missing_model_3mf_error() {
         "expected error about missing model file, got: {}",
         stderr
     );
+}
+
+// =============================================================================
+// OBJ Format Tests
+// =============================================================================
+
+#[test]
+fn test_render_obj_cube() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.png");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.obj", "-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 512);
+    assert_eq!(img.height(), 512);
+}
+
+#[test]
+fn test_render_obj_sphere() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("sphere.png");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/sphere.obj", "-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_obj_with_all_view_presets() {
+    let dir = tempfile::tempdir().unwrap();
+
+    for view in ["iso", "front", "top", "print", "print-front", "print-grid"] {
+        let output = dir.path().join(format!("{}.png", view));
+
+        let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+            .args(["fixtures/cube.obj", "-o"])
+            .arg(&output)
+            .args(["--view", view])
+            .status()
+            .unwrap();
+
+        assert!(status.success(), "view {} failed", view);
+        assert!(output.exists(), "view {} produced no output", view);
+    }
+}
+
+#[test]
+fn test_obj_stl_produce_same_triangle_count() {
+    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
+
+    let stl_config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+
+    let obj_config = RenderConfigBuilder::new("fixtures/cube.obj", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+
+    let (stl_image, stl_meta) = render_to_image(&stl_config).unwrap();
+    let (obj_image, obj_meta) = render_to_image(&obj_config).unwrap();
+
+    assert_eq!(stl_meta.triangle_count, obj_meta.triangle_count);
+    assert_eq!(stl_image.width(), obj_image.width());
+    assert_eq!(stl_image.height(), obj_image.height());
+}
+
+#[test]
+fn test_obj_format_autodetected() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.png");
+
+    // Copy obj to a file with .stl extension - should still work due to content detection
+    let misnamed = dir.path().join("cube.stl");
+    std::fs::copy("fixtures/cube.obj", &misnamed).unwrap();
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .arg(&misnamed)
+        .args(["-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_obj_in_batch_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir(&output_dir).unwrap();
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.obj", "fixtures/sphere.obj", "-o"])
+        .arg(&output_dir)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output_dir.join("cube.png").exists());
+    assert!(output_dir.join("sphere.png").exists());
+}
+
+#[test]
+fn test_obj_with_animation() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.obj", "-o"])
+        .arg(&output)
+        .args(["--animate", "--frames", "4"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    let data = std::fs::read(&output).unwrap();
+    assert!(data.starts_with(b"GIF89a") || data.starts_with(b"GIF87a"));
 }
 
 // =============================================================================

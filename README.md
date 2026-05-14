@@ -60,9 +60,10 @@ stl-render model.stl -o preview.gif --animate --material-color tan
 |--------|------------|-------|
 | STL Binary | .stl | Fastest, most common |
 | STL ASCII | .stl | Auto-detected from content |
+| OBJ | .obj | Text-based, widely supported |
 | 3MF | .3mf | ZIP with XML mesh data, multi-object support |
 
-Format is auto-detected from file content (magic bytes), not extension. Multi-object 3MF files render all objects merged into a single view.
+Format is auto-detected from file content, not extension. Multi-object 3MF files render all objects merged into a single view.
 
 ## View Presets
 
