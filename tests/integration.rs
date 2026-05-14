@@ -1672,3 +1672,152 @@ fn test_missing_model_3mf_error() {
         stderr
     );
 }
+
+// =============================================================================
+// Animated GIF Tests
+// =============================================================================
+
+#[test]
+fn test_animate_flag_produces_gif() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .arg("--animate")
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    // Verify it's a valid GIF by checking magic bytes
+    let data = std::fs::read(&output).unwrap();
+    assert!(data.starts_with(b"GIF89a") || data.starts_with(b"GIF87a"));
+}
+
+#[test]
+fn test_animate_custom_frames() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .args(["--animate", "--frames", "8"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_animate_custom_frame_delay() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .args(["--animate", "--frame-delay", "200"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_animate_with_material_color() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .args(["--animate", "--material-color", "tan"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_animate_with_3mf() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.3mf", "-o"])
+        .arg(&output)
+        .arg("--animate")
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_animate_verbose_shows_frame_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .args(["--animate", "--frames", "4", "--verbose"])
+        .output()
+        .unwrap();
+
+    assert!(result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("frame 1/4"), "should show frame progress");
+    assert!(stderr.contains("frame 4/4"), "should show final frame");
+}
+
+#[test]
+fn test_animate_without_flag_produces_png() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif"); // .gif extension but no --animate flag
+
+    let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    // Without --animate flag, should produce PNG even with .gif extension
+    let data = std::fs::read(&output).unwrap();
+    assert!(
+        data.starts_with(&[0x89, 0x50, 0x4E, 0x47]), // PNG magic
+        "without --animate flag should produce PNG"
+    );
+}
+
+#[test]
+fn test_animate_builder_api() {
+    use stl_render::{render, RenderConfigBuilder};
+
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("cube.gif");
+
+    let config = RenderConfigBuilder::new("fixtures/cube.stl", &output)
+        .animate()
+        .frames(8)
+        .frame_delay(50)
+        .build();
+
+    let result = render(&config);
+    assert!(result.is_ok());
+    assert!(output.exists());
+
+    let data = std::fs::read(&output).unwrap();
+    assert!(data.starts_with(b"GIF89a") || data.starts_with(b"GIF87a"));
+}

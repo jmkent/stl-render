@@ -20,6 +20,50 @@ stl-render model.stl -o preview.png
 stl-render 3DBenchy.stl -o benchy.png --view print --material-color blue-grey --aa 4x
 ```
 
+## Animated GIF
+
+Generate a rotating animation of any model with the `--animate` flag:
+
+| Rotating 3DBenchy |
+|-------------------|
+| ![Animated Benchy](examples/benchy_animated.gif) |
+
+```bash
+stl-render 3DBenchy.stl -o preview.gif --animate --material-color tan --aa 4x
+```
+
+The animation rotates around the Z axis (print bed orientation) at a fixed 25° elevation, producing a smooth 360° loop.
+
+### Animation Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--animate` | (required) | Enable animated GIF output |
+| `--frames` | 16 | Number of frames in the animation |
+| `--frame-delay` | 100 | Milliseconds between frames |
+
+```bash
+# Quick preview (8 frames, fast)
+stl-render model.stl -o preview.gif --animate --frames 8 --frame-delay 50
+
+# Smooth animation (24 frames)
+stl-render model.stl -o preview.gif --animate --frames 24
+
+# Slow rotation (200ms per frame)
+stl-render model.stl -o preview.gif --animate --frame-delay 200
+```
+
+Animation works with all other options:
+
+```bash
+stl-render model.stl -o preview.gif --animate \
+    --material-color blue-grey \
+    --lighting studio \
+    --aa 4x \
+    --width 512 \
+    --height 512
+```
+
 ## View Presets
 
 ### Print Bed View (`--view print`)

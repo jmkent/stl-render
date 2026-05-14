@@ -262,6 +262,9 @@ mod tests {
             metadata_path: None,
             quiet: true,
             verbose: false,
+            animate: false,
+            frames: 16,
+            frame_delay: 100,
         }
     }
 

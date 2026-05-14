@@ -17,10 +17,11 @@ stl-render model.3mf -o preview.png
 
 - **Headless:** No GPU or display required. Works in CI, containers, scripts.
 - **Multiple formats:** STL (binary/ASCII) and 3MF with auto-detection.
+- **Animated GIF:** `--animate` produces rotating preview animations.
 - **Deterministic:** Same input + flags = identical output bytes.
 - **Handles large files:** Streams 500MB+ STLs with bounded memory.
 - **Print-ready:** `--view print` shows models in Z-up orientation for 3D printing.
-- **Simple:** One mesh in, one PNG out. No configuration files.
+- **Simple:** One mesh in, one PNG or GIF out. No configuration files.
 
 ## Installation
 
@@ -48,6 +49,9 @@ stl-render model.stl -o preview.png --view print --material-color tan
 
 # High quality render
 stl-render model.stl -o preview.png --view print --aa 4x --width 1024 --height 1024
+
+# Animated rotating preview
+stl-render model.stl -o preview.gif --animate --material-color tan
 ```
 
 ## Supported Formats
@@ -128,6 +132,7 @@ Available presets: `tan`, `blue-grey`, `white`, `black`, `red`, `orange`, `green
 ## More Examples
 
 See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
+- Animated GIF output
 - Print view presets and grid
 - Batch processing multiple files
 - Material colors (filament presets)
@@ -160,6 +165,9 @@ Options:
       --background-color <HEX>  Background color for solid [default: #ffffff]
       --material-color <COLOR>  Model color: hex or preset [default: #cccccc]
       --lighting <PRESET>       Lighting: flat|studio|technical [default: studio]
+      --animate                 Enable animated GIF output (rotating view)
+      --frames <N>              Number of animation frames [default: 16]
+      --frame-delay <MS>        Milliseconds between frames [default: 100]
       --metadata <PATH>         Write render metadata JSON
       --strict                  Abort on first error (default: continue processing)
       --quiet                   Suppress progress output

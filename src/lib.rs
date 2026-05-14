@@ -239,10 +239,106 @@ pub fn render_to_image(
 /// # Ok::<(), stl_render::RenderError>(())
 /// ```
 pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+    // Route to animated render if enabled
+    if config.animate {
+        return render_animated(config);
+    }
+
     let (image, metadata) = render_to_image(config)?;
 
     // Write output
     write_output(&image, config)?;
+
+    // Write metadata if requested
+    if let Some(ref meta_path) = config.metadata_path {
+        output::write_metadata(&metadata, meta_path)?;
+    }
+
+    Ok(metadata)
+}
+
+/// Render an animated GIF showing the model rotating on a print bed.
+///
+/// The animation rotates around the Z axis (print bed orientation) at a fixed
+/// elevation, producing a smooth 360° rotation.
+pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+    use cli::ViewConfig;
+
+    // Parse mesh and compute bounds once
+    let reader = open_mesh_reader(config)?;
+    let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
+    validate_renderable_geometry(&bounds, triangle_count)?;
+
+    if config.verbose {
+        let dims = bounds.dimensions();
+        eprintln!(
+            "Loaded {} triangles, bounds: [{:.2}, {:.2}, {:.2}]",
+            triangle_count, dims.x, dims.y, dims.z
+        );
+    }
+
+    let frame_count = config.frames;
+    let mut frames = Vec::with_capacity(frame_count as usize);
+
+    // Render each frame at a different azimuth
+    for i in 0..frame_count {
+        let azimuth = (i as f32 / frame_count as f32) * 360.0;
+
+        // Create a config for this frame with print bed view at this azimuth
+        let frame_config = RenderConfig {
+            input: config.input.clone(),
+            output: config.output.clone(),
+            width: config.width,
+            height: config.height,
+            view: ViewConfig::Custom {
+                azimuth,
+                elevation: 25.0, // Print bed elevation
+            },
+            padding: config.padding,
+            aa: config.aa,
+            background: config.background,
+            background_color: config.background_color,
+            material_color: config.material_color,
+            lighting: config.lighting,
+            metadata_path: None,
+            quiet: true,
+            verbose: false,
+            animate: false,
+            frames: 0,
+            frame_delay: 0,
+        };
+
+        let frame_image = render_single_view_animated(&frame_config, &reader, &bounds)?;
+        frames.push(frame_image);
+
+        if config.verbose {
+            eprintln!("Rendered frame {}/{} (azimuth {:.1}°)", i + 1, frame_count, azimuth);
+        }
+    }
+
+    // Write GIF
+    if config.output.to_str() == Some("-") {
+        output::write_gif_to_stdout(&frames, config.frame_delay)?;
+    } else {
+        output::write_gif(&frames, &config.output, config.frame_delay)?;
+    }
+
+    if config.verbose {
+        eprintln!(
+            "Wrote {} frame animated GIF to {}",
+            frame_count,
+            config.output.display()
+        );
+    }
+
+    // Build metadata
+    let dims = bounds.dimensions();
+    let metadata = RenderMetadata {
+        input_file: config.input.to_string_lossy().to_string(),
+        triangle_count,
+        bounding_box: bounds,
+        dimensions: [dims.x, dims.y, dims.z],
+    };
 
     // Write metadata if requested
     if let Some(ref meta_path) = config.metadata_path {
@@ -282,6 +378,54 @@ fn render_single_view(
             config.padding,
         ),
     };
+
+    // Create framebuffer
+    let mut fb = render::Framebuffer::new(
+        render_width,
+        render_height,
+        config.background,
+        config.background_color,
+    );
+
+    // Render triangles
+    for result in reader.triangles()? {
+        let tri = result?;
+        fb.rasterize_triangle(&tri, &cam, config);
+    }
+
+    // Downsample if AA enabled
+    Ok(fb.into_image(config.aa))
+}
+
+fn render_single_view_animated(
+    config: &RenderConfig,
+    reader: &MeshReader,
+    bounds: &BoundingBox,
+) -> Result<image::RgbaImage, RenderError> {
+    use cli::ViewConfig;
+
+    // Compute render dimensions (scale up for AA)
+    let aa_scale = match config.aa {
+        cli::AntiAliasing::None => 1,
+        cli::AntiAliasing::X2 => 2,
+        cli::AntiAliasing::X4 => 4,
+    };
+    let render_width = config.width * aa_scale;
+    let render_height = config.height * aa_scale;
+
+    // For animated view, always use Z-up print bed camera
+    let azimuth = match config.view {
+        ViewConfig::Custom { azimuth, .. } => azimuth,
+        _ => 0.0,
+    };
+
+    let cam = camera::Camera::from_print_view_with_azimuth(
+        azimuth,
+        bounds,
+        render_width,
+        render_height,
+        config.padding,
+    );
 
     // Create framebuffer
     let mut fb = render::Framebuffer::new(
@@ -371,6 +515,9 @@ fn render_print_grid_to_image(
             metadata_path: None,
             quiet: true,
             verbose: false,
+            animate: false,
+            frames: 0,
+            frame_delay: 0,
         };
 
         let quad_image = render_single_view(&quad_config, &reader, &bounds)?;

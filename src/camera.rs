@@ -82,7 +82,7 @@ impl Camera {
     /// Print bed view: Z-up coordinate system with configurable azimuth.
     /// Models Z axis as vertical in the rendered image.
     /// - azimuth: rotation around Z axis in degrees (0 = front, 90 = right, etc.)
-    fn from_print_view_with_azimuth(
+    pub fn from_print_view_with_azimuth(
         azimuth: f32,
         bounds: &BoundingBox,
         width: u32,

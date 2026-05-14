@@ -133,6 +133,18 @@ pub struct Args {
     /// Abort on first error (default: continue and report all errors)
     #[arg(long)]
     pub strict: bool,
+
+    /// Enable animated GIF output (rotating print bed view)
+    #[arg(long)]
+    pub animate: bool,
+
+    /// Number of frames for animated GIF (default: 16)
+    #[arg(long, default_value = "16")]
+    pub frames: u32,
+
+    /// Frame delay in milliseconds for animated GIF (default: 100)
+    #[arg(long, default_value = "100")]
+    pub frame_delay: u16,
 }
 
 /// Camera view presets for common viewing angles.
@@ -263,6 +275,12 @@ pub struct RenderConfig {
     pub quiet: bool,
     /// Show detailed progress
     pub verbose: bool,
+    /// Enable animated GIF output
+    pub animate: bool,
+    /// Number of frames for animated GIF
+    pub frames: u32,
+    /// Frame delay in milliseconds for animated GIF
+    pub frame_delay: u16,
 }
 
 /// Builder for [`RenderConfig`] with sensible defaults.
@@ -295,6 +313,9 @@ pub struct RenderConfigBuilder {
     metadata_path: Option<PathBuf>,
     quiet: bool,
     verbose: bool,
+    animate: bool,
+    frames: u32,
+    frame_delay: u16,
 }
 
 impl RenderConfigBuilder {
@@ -323,6 +344,9 @@ impl RenderConfigBuilder {
             metadata_path: None,
             quiet: false,
             verbose: false,
+            animate: false,
+            frames: 16,
+            frame_delay: 100,
         }
     }
 
@@ -412,6 +436,24 @@ impl RenderConfigBuilder {
         self
     }
 
+    /// Enable animated GIF output.
+    pub fn animate(mut self) -> Self {
+        self.animate = true;
+        self
+    }
+
+    /// Set the number of frames for animated GIF.
+    pub fn frames(mut self, frames: u32) -> Self {
+        self.frames = frames;
+        self
+    }
+
+    /// Set the frame delay in milliseconds for animated GIF.
+    pub fn frame_delay(mut self, delay: u16) -> Self {
+        self.frame_delay = delay;
+        self
+    }
+
     /// Build the [`RenderConfig`].
     pub fn build(self) -> RenderConfig {
         RenderConfig {
@@ -429,6 +471,9 @@ impl RenderConfigBuilder {
             metadata_path: self.metadata_path,
             quiet: self.quiet,
             verbose: self.verbose,
+            animate: self.animate,
+            frames: self.frames,
+            frame_delay: self.frame_delay,
         }
     }
 }
@@ -458,6 +503,9 @@ pub struct BatchConfig {
     pub verbose: bool,
     pub strict: bool,
     pub recursive: bool,
+    pub animate: bool,
+    pub frames: u32,
+    pub frame_delay: u16,
 }
 
 impl BatchConfig {
@@ -492,6 +540,9 @@ impl BatchConfig {
                     metadata_path,
                     quiet: self.quiet,
                     verbose: self.verbose,
+                    animate: self.animate,
+                    frames: self.frames,
+                    frame_delay: self.frame_delay,
                 }
             })
         })
@@ -669,6 +720,9 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         verbose: args.verbose,
         strict: args.strict,
         recursive: args.recursive,
+        animate: args.animate,
+        frames: args.frames,
+        frame_delay: args.frame_delay,
     })
 }
 
@@ -1164,6 +1218,9 @@ mod tests {
             verbose: false,
             strict: false,
             recursive: true,
+            animate: false,
+            frames: 16,
+            frame_delay: 100,
         };
 
         let outputs: Vec<_> = config.iter_jobs().map(|job| job.output).collect();

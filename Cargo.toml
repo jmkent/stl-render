@@ -16,7 +16,7 @@ exclude = ["examples/", "fixtures/", "tools/"]
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 glam = "0.29"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif"] }
 memmap2 = "0.9"
 quick-xml = "0.37"
 serde = { version = "1", features = ["derive"] }

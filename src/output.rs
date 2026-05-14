@@ -27,7 +27,19 @@ pub struct RenderMetadata {
 }
 
 pub fn write_png(image: &RgbaImage, path: &Path) -> Result<(), OutputError> {
-    image.save(path)?;
+    use image::ImageEncoder;
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+    let encoder = image::codecs::png::PngEncoder::new(writer);
+    encoder.write_image(
+        image.as_raw(),
+        image.width(),
+        image.height(),
+        image::ExtendedColorType::Rgba8,
+    )?;
     Ok(())
 }
 
@@ -53,6 +65,55 @@ pub fn write_png_to_stdout(image: &RgbaImage) -> Result<(), OutputError> {
 pub fn write_metadata(meta: &RenderMetadata, path: &Path) -> Result<(), OutputError> {
     let json = serde_json::to_string_pretty(meta)?;
     std::fs::write(path, json)?;
+    Ok(())
+}
+
+pub fn write_gif(frames: &[RgbaImage], path: &Path, frame_delay_ms: u16) -> Result<(), OutputError> {
+    use image::codecs::gif::{GifEncoder, Repeat};
+    use image::Frame;
+    use std::fs::File;
+
+    let file = File::create(path)?;
+    let mut encoder = GifEncoder::new(file);
+    encoder.set_repeat(Repeat::Infinite)?;
+
+    for img in frames {
+        let frame = Frame::from_parts(
+            img.clone(),
+            0,
+            0,
+            image::Delay::from_numer_denom_ms(frame_delay_ms as u32, 1),
+        );
+        encoder.encode_frame(frame)?;
+    }
+
+    Ok(())
+}
+
+pub fn write_gif_to_stdout(frames: &[RgbaImage], frame_delay_ms: u16) -> Result<(), OutputError> {
+    use image::codecs::gif::{GifEncoder, Repeat};
+    use image::Frame;
+    use std::io::Write;
+
+    let stdout = std::io::stdout();
+    let mut handle = stdout.lock();
+
+    {
+        let mut encoder = GifEncoder::new(&mut handle);
+        encoder.set_repeat(Repeat::Infinite)?;
+
+        for img in frames {
+            let frame = Frame::from_parts(
+                img.clone(),
+                0,
+                0,
+                image::Delay::from_numer_denom_ms(frame_delay_ms as u32, 1),
+            );
+            encoder.encode_frame(frame)?;
+        }
+    }
+
+    handle.flush()?;
     Ok(())
 }
 
