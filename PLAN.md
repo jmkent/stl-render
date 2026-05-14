@@ -351,68 +351,141 @@ uv run generate_fixtures.py -o ../../fixtures --large
 
 ---
 
-### M10: Robustness
+### M10: Batch Mode with Graceful Error Handling
 
-**Goal:** Handle edge cases gracefully.
+**Goal:** Process multiple files/views with robust per-file error handling.
 
-#### Invalid Input
+#### Multiple Inputs
+- [ ] **Test:** `stl-render *.stl -o outdir/` processes all files
+- [ ] **Test:** output naming: `input.stl` → `outdir/input.png`
+- [ ] Implement glob expansion or multiple positional args
+
+#### Multiple Views
+- [ ] **Test:** `--views front,back,iso` produces 3 PNGs per input
+- [ ] **Test:** output naming: `input.front.png`, `input.back.png`
+- [ ] Implement multi-view mode with comma-separated list
+
+#### Error Handling Per File
+- [ ] **Test:** batch with one invalid file continues processing others
+- [ ] **Test:** final exit code reflects worst error (0=success, 2=input errors)
+- [ ] **Test:** `--strict` flag aborts on first error
+- [ ] **Test:** summary output shows success/failure count
+
+#### Invalid Input Detection
 - [ ] **Test:** empty file → clear error message
 - [ ] **Test:** not an STL → clear error message
 - [ ] **Test:** binary STL with wrong triangle count → error
 - [ ] **Test:** ASCII STL with syntax error → error with line number
 
-#### Degenerate Geometry
-- [ ] **Test:** zero-area triangle is skipped
-- [ ] **Test:** NaN/Inf coordinates → error or skip
-- [ ] **Test:** model with zero triangles → empty or error
+#### Degenerate Geometry Handling
+- [ ] **Test:** zero-area triangle is skipped silently
+- [ ] **Test:** NaN/Inf coordinates → warning, triangle skipped
+- [ ] **Test:** model with zero valid triangles → empty render or error
 
-#### File System
+#### File System Errors
 - [ ] **Test:** input file doesn't exist → exit code 2
 - [ ] **Test:** output directory doesn't exist → exit code 3
 - [ ] **Test:** output file not writable → exit code 3
 
-**Acceptance:** Fuzz with malformed inputs, no panics.
+**Acceptance:** `stl-render fixtures/*.stl -o output/` works; no panics on malformed input.
 
 ---
 
-### M11: Batch Mode
+### M11: Print View Presets & Grid
 
-**Goal:** Process multiple files efficiently.
+**Goal:** Directional print views (all Z-up) and 2x2 grid composite.
 
-#### Multiple Inputs
-- [ ] **Test:** `stl-render *.stl -o outdir/`
-- [ ] **Test:** output naming: `input.stl` → `outdir/input.png`
-- [ ] Implement glob expansion or multiple positional args
+#### New Print View Variants
 
-#### Multiple Views
-- [ ] **Test:** `--views front,back,iso` produces 3 PNGs
-- [ ] **Test:** output naming: `input.front.png`, `input.back.png`
-- [ ] Implement multi-view mode
+All maintain Z-up orientation (Vec3::Z in look_at_rh):
 
-#### Parallelism (optional)
-- [ ] Consider rayon for parallel file processing
-- [ ] Keep single-file rendering single-threaded for determinism
+| View | Azimuth | Description |
+|------|---------|-------------|
+| print (existing) | 20° | Front-right angle |
+| print-front | 20° | Alias for print |
+| print-left | 110° | Looking from left |
+| print-right | -70° | Looking from right |
+| print-back | 200° | Looking from back |
 
-**Acceptance:** Render 10 STLs to directory in one command.
+- [ ] **Test:** `--view print-left` renders with Z-up orientation
+- [ ] **Test:** `--view print-right` renders with Z-up orientation
+- [ ] **Test:** `--view print-back` renders with Z-up orientation
+- [ ] **Test:** `--view print-front` is alias for `--view print`
+- [ ] **Test:** all print-* views produce valid matrices
+- [ ] Implement `from_print_view_with_angles(azimuth, elevation)` in camera.rs
+- [ ] Add `PrintFront`, `PrintLeft`, `PrintRight`, `PrintBack` to ViewPreset enum
+
+#### 2x2 Grid Snapshot
+
+`--view print-grid` produces single image with 4 quadrants:
+```
++---------------+---------------+
+| print-front   | print-right   |
++---------------+---------------+
+| print-back    | print-left    |
++---------------+---------------+
+```
+
+- [ ] **Test:** `--view print-grid` produces image with 4 quadrants
+- [ ] **Test:** grid dimensions correct (each quadrant half size)
+- [ ] **Test:** each quadrant matches individual print-* render
+- [ ] Implement grid composite using image crate
+- [ ] Add `PrintGrid` to ViewPreset enum
+
+**Acceptance:** All print-* views render with Z-up; grid shows 4 recognizable angles.
 
 ---
 
-### M12: Library API
+### M12: Material Color Presets
+
+**Goal:** Named presets for common filament colors + hex support.
+
+#### Color Presets
+
+| Name | Hex | RGB |
+|------|-----|-----|
+| tan | #C19A6B | [193, 154, 107] |
+| blue-grey | #708090 | [112, 128, 144] |
+| white | #FFFFFF | [255, 255, 255] |
+| black | #1A1A1A | [26, 26, 26] |
+| red | #CC3333 | [204, 51, 51] |
+| orange | #FF6600 | [255, 102, 0] |
+| green | #339933 | [51, 153, 51] |
+| blue | #3366CC | [51, 102, 204] |
+| grey/gray | #808080 | [128, 128, 128] |
+| silver | #C0C0C0 | [192, 192, 192] |
+
+- [ ] **Test:** `--material-color tan` produces correct RGB
+- [ ] **Test:** `--material-color blue-grey` produces correct RGB
+- [ ] **Test:** `--material-color TAN` works (case insensitive)
+- [ ] **Test:** `--material-color "#ff0000"` still works (hex fallback)
+- [ ] **Test:** all 10 presets produce correct values
+- [ ] Implement `parse_color()` with preset lookup + hex fallback
+- [ ] Update CLI help to list available presets
+
+**Acceptance:** `--material-color tan` works; hex colors still work.
+
+---
+
+### M13: Library API
 
 **Goal:** Clean public API for embedding.
 
 #### Public Interface (lib.rs)
-- [ ] **Test:** call render() from external crate
-- [ ] **Test:** RenderConfig is constructible without cli.rs
-- [ ] Export: RenderConfig, RenderMetadata, RenderError
+- [ ] **Test:** call `stl_render::render(&config)` from external crate
+- [ ] **Test:** `RenderConfig` is constructible without cli module
+- [ ] **Test:** `RenderConfig::builder()` pattern works
+- [ ] Export: RenderConfig, ViewPreset, RenderMetadata, RenderError
 - [ ] Export: StlReader, Triangle, BoundingBox
+- [ ] Add `render_to_image()` returning `(RgbaImage, RenderMetadata)`
 - [ ] Document public API with rustdoc
 
 #### Stability
 - [ ] Review API surface for breaking change risk
-- [ ] Mark internal modules as pub(crate)
+- [ ] Mark internal modules as `pub(crate)`
+- [ ] Add `#[non_exhaustive]` to enums that may grow
 
-**Acceptance:** Can use as library: `stl_render::render(&config)?`
+**Acceptance:** External crate can `stl_render::render(&config)?`
 
 ---
 
@@ -422,16 +495,16 @@ Store reference PNGs in `fixtures/golden/`. Compare with tolerance for CI.
 
 | Fixture | Views | Notes |
 |---------|-------|-------|
-| cube.stl | all 7 | Basic geometry, 12 triangles |
-| sphere.stl | iso | Curved surface shading, 1280 triangles |
-| cylinder.stl | front, top, iso | Mixed flat/curved surfaces |
-| tall_column.stl | front, iso | Aspect ratio handling (tall) |
-| flat_tile.stl | top, iso | Near-planar model (wide) |
-| long_beam.stl | front, top | Elongated geometry |
+| cube.stl | iso, print, print-grid | Basic geometry, 12 triangles |
+| sphere.stl | iso, print | Curved surface shading, 1280 triangles |
+| cylinder.stl | front, top, print | Mixed flat/curved surfaces |
+| tall_column.stl | front, print | Aspect ratio handling (tall) |
+| flat_tile.stl | top, print | Near-planar model (wide) |
+| long_beam.stl | front, print | Elongated geometry |
 | single_triangle.stl | front | Minimal geometry |
 
 Golden images generated once rendering is stable. Workflow:
-1. Render all fixtures: `stl-render fixtures/*.stl -o fixtures/golden/ --views front,iso`
+1. Render all fixtures: `stl-render fixtures/*.stl -o fixtures/golden/ --views front,iso,print`
 2. Manually verify images look correct
 3. Commit as reference
 4. CI compares new renders against reference (pixel diff with tolerance)
