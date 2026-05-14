@@ -906,6 +906,78 @@ fn test_batch_summary_output() {
 }
 
 #[test]
+fn test_batch_reports_each_conversion() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let output = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/sphere.stl",
+            "-o",
+            &format!("{}/", outdir.display()),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "Rendered fixtures/cube.stl as {} successful",
+            outdir.join("cube.png").display()
+        )),
+        "Should show cube conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered fixtures/sphere.stl as {} successful",
+            outdir.join("sphere.png").display()
+        )),
+        "Should show sphere conversion line: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_batch_reports_failed_conversion() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let output = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/nonexistent.stl",
+            "-o",
+            &format!("{}/", outdir.display()),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "Rendered fixtures/cube.stl as {} successful",
+            outdir.join("cube.png").display()
+        )),
+        "Should show successful conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered fixtures/nonexistent.stl as {} failed",
+            outdir.join("nonexistent.png").display()
+        )),
+        "Should show failed conversion line: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_batch_requires_directory_for_multiple_inputs() {
     let output = stl_render()
         .args([

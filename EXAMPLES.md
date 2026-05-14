@@ -222,6 +222,13 @@ stl-render *.stl -o output/
 # Output naming: model.stl -> output/model.png
 ```
 
+Batch mode prints one concise status line per attempted conversion:
+
+```text
+Rendered fixtures/cube.stl as output/cube.png successful
+Rendered fixtures/truncated.stl as output/truncated.png failed
+```
+
 ### Multiple Views
 
 Generate multiple views of a single model:

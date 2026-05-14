@@ -45,8 +45,14 @@ fn run() -> Result<(), RenderError> {
         match stl_render::render(&config) {
             Ok(_metadata) => {
                 success_count += 1;
+                if is_batch && !quiet {
+                    eprintln!("Rendered {} as {} successful", input_name, output_name);
+                }
             }
             Err(e) => {
+                if is_batch && !quiet {
+                    eprintln!("Rendered {} as {} failed", input_name, output_name);
+                }
                 if strict {
                     return Err(e);
                 }
