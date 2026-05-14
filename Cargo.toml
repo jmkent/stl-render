@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Fast, headless CLI tool to render STL files to PNG images"
 license = "MIT"
-repository = "https://github.com/youruser/stl-render"
+repository = "https://github.com/jmkent/stl-render"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

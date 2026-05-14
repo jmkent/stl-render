@@ -180,3 +180,58 @@ fn test_render_produces_visible_content() {
         non_transparent
     );
 }
+
+#[test]
+fn test_material_color_red() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("red.png");
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--material-color", "#ff0000",
+            "--background", "transparent",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+
+    let img = image::open(&output).unwrap().into_rgba8();
+    let visible: Vec<_> = img.pixels().filter(|p| p[3] > 0).collect();
+    assert!(!visible.is_empty());
+
+    let avg_r: u32 = visible.iter().map(|p| p[0] as u32).sum::<u32>() / visible.len() as u32;
+    let avg_b: u32 = visible.iter().map(|p| p[2] as u32).sum::<u32>() / visible.len() as u32;
+
+    assert!(avg_r > avg_b * 2, "Red material should have more R than B: r={}, b={}", avg_r, avg_b);
+}
+
+#[test]
+fn test_lighting_presets_differ() {
+    let dir = tempdir().unwrap();
+    let flat = dir.path().join("flat.png");
+    let studio = dir.path().join("studio.png");
+    let technical = dir.path().join("technical.png");
+
+    for (path, preset) in [(&flat, "flat"), (&studio, "studio"), (&technical, "technical")] {
+        let status = stl_render()
+            .args([
+                "fixtures/cube.stl",
+                "-o", path.to_str().unwrap(),
+                "--lighting", preset,
+                "--aa", "none",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
+    let flat_data = std::fs::read(&flat).unwrap();
+    let studio_data = std::fs::read(&studio).unwrap();
+    let technical_data = std::fs::read(&technical).unwrap();
+
+    assert_ne!(flat_data, studio_data, "Flat and studio should differ");
+    assert_ne!(studio_data, technical_data, "Studio and technical should differ");
+}

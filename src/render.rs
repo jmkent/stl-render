@@ -418,4 +418,63 @@ mod tests {
         assert_eq!(img4.width(), 4);
         assert_eq!(img4.height(), 4);
     }
+
+    #[test]
+    fn test_flat_lighting_single_front_light() {
+        let view_matrix = Mat4::IDENTITY;
+        let material = [200, 200, 200];
+
+        let front = compute_shade(Vec3::new(0.0, 0.0, 1.0), &view_matrix, LightingPreset::Flat, material);
+        let side = compute_shade(Vec3::new(1.0, 0.0, 0.0), &view_matrix, LightingPreset::Flat, material);
+        let back = compute_shade(Vec3::new(0.0, 0.0, -1.0), &view_matrix, LightingPreset::Flat, material);
+
+        assert!(front[0] > side[0], "Front should be brighter than side");
+        assert!(side[0] > back[0] || side[0] == back[0], "Side should be >= back (both get only ambient)");
+    }
+
+    #[test]
+    fn test_studio_lighting_multiple_lights() {
+        let view_matrix = Mat4::IDENTITY;
+        let material = [200, 200, 200];
+
+        let front = compute_shade(Vec3::new(0.0, 0.0, 1.0), &view_matrix, LightingPreset::Studio, material);
+        let left = compute_shade(Vec3::new(-1.0, 0.0, 0.0), &view_matrix, LightingPreset::Studio, material);
+        let right = compute_shade(Vec3::new(1.0, 0.0, 0.0), &view_matrix, LightingPreset::Studio, material);
+
+        assert!(front[0] > 100, "Front should be well-lit in studio: {:?}", front);
+        assert!(left[0] != right[0], "Studio lighting should be asymmetric: left={:?}, right={:?}", left, right);
+    }
+
+    #[test]
+    fn test_technical_lighting_uniform() {
+        let view_matrix = Mat4::IDENTITY;
+        let material = [200, 200, 200];
+
+        let front = compute_shade(Vec3::new(0.0, 0.0, 1.0), &view_matrix, LightingPreset::Technical, material);
+        let left = compute_shade(Vec3::new(-1.0, 0.0, 0.0), &view_matrix, LightingPreset::Technical, material);
+        let right = compute_shade(Vec3::new(1.0, 0.0, 0.0), &view_matrix, LightingPreset::Technical, material);
+        let top = compute_shade(Vec3::new(0.0, 1.0, 0.0), &view_matrix, LightingPreset::Technical, material);
+
+        assert_eq!(left[0], right[0], "Technical should be symmetric left/right");
+        let variance = [front[0], left[0], top[0]].iter()
+            .map(|&v| v as i32)
+            .map(|v| (v - 128).abs())
+            .max().unwrap();
+        assert!(variance < 80, "Technical lighting should be relatively uniform");
+    }
+
+    #[test]
+    fn test_lighting_presets_differ() {
+        let view_matrix = Mat4::IDENTITY;
+        let material = [200, 200, 200];
+        let normal = Vec3::new(0.5, 0.5, 0.7).normalize();
+
+        let flat = compute_shade(normal, &view_matrix, LightingPreset::Flat, material);
+        let studio = compute_shade(normal, &view_matrix, LightingPreset::Studio, material);
+        let technical = compute_shade(normal, &view_matrix, LightingPreset::Technical, material);
+
+        assert!(flat != studio || studio != technical,
+            "Different presets should produce different results: flat={:?}, studio={:?}, technical={:?}",
+            flat, studio, technical);
+    }
 }
