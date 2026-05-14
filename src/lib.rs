@@ -262,8 +262,6 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
 /// The animation rotates around the Z axis (print bed orientation) at a fixed
 /// elevation, producing a smooth 360° rotation.
 pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
-    use cli::ViewConfig;
-
     // Parse mesh and compute bounds once
     let reader = open_mesh_reader(config)?;
     let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
@@ -277,6 +275,10 @@ pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderEr
         );
     }
 
+    // Compute bounding sphere radius for consistent scaling across all frames
+    let dims = bounds.dimensions();
+    let sphere_radius = (dims.x * dims.x + dims.y * dims.y + dims.z * dims.z).sqrt() / 2.0;
+
     let frame_count = config.frames;
     let mut frames = Vec::with_capacity(frame_count as usize);
 
@@ -284,31 +286,7 @@ pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderEr
     for i in 0..frame_count {
         let azimuth = (i as f32 / frame_count as f32) * 360.0;
 
-        // Create a config for this frame with print bed view at this azimuth
-        let frame_config = RenderConfig {
-            input: config.input.clone(),
-            output: config.output.clone(),
-            width: config.width,
-            height: config.height,
-            view: ViewConfig::Custom {
-                azimuth,
-                elevation: 25.0, // Print bed elevation
-            },
-            padding: config.padding,
-            aa: config.aa,
-            background: config.background,
-            background_color: config.background_color,
-            material_color: config.material_color,
-            lighting: config.lighting,
-            metadata_path: None,
-            quiet: true,
-            verbose: false,
-            animate: false,
-            frames: 0,
-            frame_delay: 0,
-        };
-
-        let frame_image = render_single_view_animated(&frame_config, &reader, &bounds)?;
+        let frame_image = render_animation_frame(config, &reader, &bounds, sphere_radius, azimuth)?;
         frames.push(frame_image);
 
         if config.verbose {
@@ -397,13 +375,13 @@ fn render_single_view(
     Ok(fb.into_image(config.aa))
 }
 
-fn render_single_view_animated(
+fn render_animation_frame(
     config: &RenderConfig,
     reader: &MeshReader,
     bounds: &BoundingBox,
+    sphere_radius: f32,
+    azimuth: f32,
 ) -> Result<image::RgbaImage, RenderError> {
-    use cli::ViewConfig;
-
     // Compute render dimensions (scale up for AA)
     let aa_scale = match config.aa {
         cli::AntiAliasing::None => 1,
@@ -413,15 +391,11 @@ fn render_single_view_animated(
     let render_width = config.width * aa_scale;
     let render_height = config.height * aa_scale;
 
-    // For animated view, always use Z-up print bed camera
-    let azimuth = match config.view {
-        ViewConfig::Custom { azimuth, .. } => azimuth,
-        _ => 0.0,
-    };
-
-    let cam = camera::Camera::from_print_view_with_azimuth(
+    // Use fixed-scale camera for consistent sizing across all frames
+    let cam = camera::Camera::from_print_view_for_animation(
         azimuth,
         bounds,
+        sphere_radius,
         render_width,
         render_height,
         config.padding,

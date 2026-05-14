@@ -21,7 +21,7 @@ stl-render model.3mf -o preview.png
 - **Deterministic:** Same input + flags = identical output bytes.
 - **Handles large files:** Streams 500MB+ STLs with bounded memory.
 - **Print-ready:** `--view print` shows models in Z-up orientation for 3D printing.
-- **Simple:** One mesh in, one PNG or GIF out. No configuration files.
+- **Simple:** One mesh in, one rendering out. No configuration files.
 
 ## Installation
 

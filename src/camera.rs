@@ -126,6 +126,50 @@ impl Camera {
     pub fn matrix(&self) -> Mat4 {
         self.proj_matrix * self.view_matrix
     }
+
+    /// Print bed view for animation with fixed scale.
+    /// Uses a bounding sphere radius for consistent scaling across all rotation angles.
+    /// - azimuth: rotation around Z axis in degrees
+    /// - sphere_radius: pre-computed bounding sphere radius for consistent scaling
+    pub fn from_print_view_for_animation(
+        azimuth: f32,
+        bounds: &BoundingBox,
+        sphere_radius: f32,
+        width: u32,
+        height: u32,
+        padding: f32,
+    ) -> Self {
+        let center = bounds.center();
+        let distance = sphere_radius * 6.0; // Far enough to see the whole model
+
+        // Fixed elevation of 25° from XY plane
+        let az_rad = azimuth.to_radians();
+        let el_rad = 25.0_f32.to_radians();
+
+        // Position camera using Z-up spherical coordinates
+        let horizontal_dist = distance * el_rad.cos();
+        let eye = Vec3::new(
+            center.x + horizontal_dist * az_rad.sin(),
+            center.y - horizontal_dist * az_rad.cos(),
+            center.z + distance * el_rad.sin(),
+        );
+
+        let view_matrix = Mat4::look_at_rh(eye, center, Vec3::Z);
+
+        // Use fixed sphere-based projection instead of per-frame bounds projection
+        let proj_matrix = compute_ortho_projection_fixed(
+            sphere_radius,
+            width,
+            height,
+            padding,
+            distance,
+        );
+
+        Self {
+            view_matrix,
+            proj_matrix,
+        }
+    }
 }
 
 fn preset_to_angles(preset: ViewPreset) -> (f32, f32) {
@@ -220,6 +264,48 @@ fn compute_ortho_projection(
         center_x + half_w,
         center_y - half_h,
         center_y + half_h,
+        0.1,
+        distance * 4.0,
+    )
+}
+
+/// Compute orthographic projection with fixed size based on bounding sphere.
+/// Used for animation to maintain consistent scale across all frames.
+fn compute_ortho_projection_fixed(
+    sphere_radius: f32,
+    width: u32,
+    height: u32,
+    padding: f32,
+    distance: f32,
+) -> Mat4 {
+    // Use sphere diameter as the model extent (same in all directions)
+    let model_size = sphere_radius * 2.0;
+
+    // Apply padding
+    let padded_size = model_size * (1.0 + padding);
+
+    // Aspect ratio of output image
+    let aspect = width as f32 / height as f32;
+
+    // Choose extent that fits model while respecting aspect ratio
+    let (half_w, half_h) = if aspect > 1.0 {
+        // Wider than tall - fit to height
+        let half_h = padded_size / 2.0;
+        let half_w = half_h * aspect;
+        (half_w, half_h)
+    } else {
+        // Taller than wide - fit to width
+        let half_w = padded_size / 2.0;
+        let half_h = half_w / aspect;
+        (half_w, half_h)
+    };
+
+    // Center projection at origin (camera looks at model center)
+    Mat4::orthographic_rh(
+        -half_w,
+        half_w,
+        -half_h,
+        half_h,
         0.1,
         distance * 4.0,
     )
