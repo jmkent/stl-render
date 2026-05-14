@@ -109,7 +109,9 @@ impl MeshReader {
             Ok(MeshReader::Obj(ObjReader::from_reader(cursor)?))
         } else {
             // Assume STL
-            Ok(MeshReader::Stl(StlReader::from_reader(std::io::Cursor::new(data))?))
+            Ok(MeshReader::Stl(StlReader::from_reader(
+                std::io::Cursor::new(data),
+            )?))
         }
     }
 
@@ -306,7 +308,12 @@ pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderEr
         frames.push(frame_image);
 
         if config.verbose {
-            eprintln!("Rendered frame {}/{} (azimuth {:.1}°)", i + 1, frame_count, azimuth);
+            eprintln!(
+                "Rendered frame {}/{} (azimuth {:.1}°)",
+                i + 1,
+                frame_count,
+                azimuth
+            );
         }
     }
 

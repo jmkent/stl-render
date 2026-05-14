@@ -109,7 +109,10 @@ mod tests {
             let stl_reader = StlReader::open(stl_path).unwrap();
             let obj_reader = ObjReader::open(obj_path).unwrap();
 
-            assert_eq!(stl_reader.triangle_count(), Some(obj_reader.triangle_count()));
+            assert_eq!(
+                stl_reader.triangle_count(),
+                Some(obj_reader.triangle_count())
+            );
         }
     }
 }

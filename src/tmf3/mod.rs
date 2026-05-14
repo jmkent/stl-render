@@ -144,10 +144,17 @@ mod tests {
             let stl_reader = StlReader::open(stl_path).unwrap();
             let tmf3_reader = Tmf3Reader::open(tmf3_path).unwrap();
 
-            assert_eq!(stl_reader.triangle_count(), Some(tmf3_reader.triangle_count()));
+            assert_eq!(
+                stl_reader.triangle_count(),
+                Some(tmf3_reader.triangle_count())
+            );
 
             // Both should have same number of triangles
-            let stl_tris: Vec<_> = stl_reader.triangles().unwrap().map(|r| r.unwrap()).collect();
+            let stl_tris: Vec<_> = stl_reader
+                .triangles()
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
             let tmf3_tris: Vec<_> = tmf3_reader.triangles().map(|r| r.unwrap()).collect();
 
             assert_eq!(stl_tris.len(), tmf3_tris.len());

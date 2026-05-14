@@ -58,7 +58,7 @@ pub enum CliError {
 #[command(about = "Render STL and 3MF files to PNG images")]
 #[command(version)]
 pub struct Args {
-    /// Input mesh file(s) - STL or 3MF, supports multiple files and glob patterns (use - for stdin)
+    /// Input mesh file(s) - STL, OBJ, or 3MF; directories expand to supported files (use - for stdin)
     #[arg(required = true)]
     pub inputs: Vec<PathBuf>,
 
@@ -82,7 +82,7 @@ pub struct Args {
     #[arg(long)]
     pub views: Option<String>,
 
-    /// Recursively render .stl files from input directories
+    /// Recursively render supported mesh files from input directories
     #[arg(short, long)]
     pub recursive: bool,
 
@@ -482,6 +482,7 @@ impl RenderConfigBuilder {
 pub struct BatchInput {
     pub path: PathBuf,
     pub output_relative: PathBuf,
+    pub preserve_extension_in_output: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -555,6 +556,7 @@ impl BatchConfig {
                 view,
                 self.views.len() > 1,
                 "png",
+                input.preserve_extension_in_output,
             ))
         } else {
             self.output_file
@@ -570,6 +572,7 @@ impl BatchConfig {
                 view,
                 self.views.len() > 1,
                 "json",
+                input.preserve_extension_in_output,
             ))
         } else {
             self.metadata_path
@@ -584,8 +587,13 @@ fn output_relative_path(
     view: ViewConfig,
     include_view: bool,
     extension: &str,
+    preserve_input_extension: bool,
 ) -> PathBuf {
-    let mut output = input_relative.with_extension("");
+    let mut output = if preserve_input_extension {
+        input_relative.to_path_buf()
+    } else {
+        input_relative.with_extension("")
+    };
     let stem = output
         .file_name()
         .unwrap_or_default()
@@ -670,9 +678,9 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         vec![ViewConfig::Preset(parse_view_preset(&args.view)?)]
     };
 
-    let has_recursive_dir = args.recursive && args.inputs.iter().any(|input| input.is_dir());
+    let has_input_dir = args.inputs.iter().any(|input| input.is_dir());
     let inputs = expand_inputs(&args.inputs, args.recursive)?;
-    let is_batch = inputs.len() > 1 || views.len() > 1 || has_recursive_dir;
+    let is_batch = inputs.len() > 1 || views.len() > 1 || has_input_dir;
 
     // Validate stdin/stdout with batch mode
     if is_stdin && is_batch {
@@ -730,8 +738,8 @@ fn expand_inputs(inputs: &[PathBuf], recursive: bool) -> Result<Vec<BatchInput>,
     let mut expanded = Vec::new();
 
     for input in inputs {
-        if recursive && input.is_dir() {
-            collect_stl_files(input, input, &mut expanded)?;
+        if input.is_dir() {
+            collect_supported_mesh_files(input, input, recursive, &mut expanded)?;
         } else {
             let output_relative = input
                 .file_name()
@@ -740,16 +748,42 @@ fn expand_inputs(inputs: &[PathBuf], recursive: bool) -> Result<Vec<BatchInput>,
             expanded.push(BatchInput {
                 path: input.clone(),
                 output_relative,
+                preserve_extension_in_output: false,
             });
         }
     }
 
+    disambiguate_output_collisions(&mut expanded);
     Ok(expanded)
 }
 
-fn collect_stl_files(
+fn disambiguate_output_collisions(inputs: &mut [BatchInput]) {
+    use std::collections::HashMap;
+
+    let mut output_keys: HashMap<PathBuf, usize> = HashMap::new();
+    for input in inputs.iter() {
+        *output_keys
+            .entry(output_base_key(&input.output_relative))
+            .or_default() += 1;
+    }
+
+    for input in inputs {
+        input.preserve_extension_in_output = output_keys
+            .get(&output_base_key(&input.output_relative))
+            .copied()
+            .unwrap_or(0)
+            > 1;
+    }
+}
+
+fn output_base_key(input_relative: &Path) -> PathBuf {
+    input_relative.with_extension("")
+}
+
+fn collect_supported_mesh_files(
     root: &Path,
     dir: &Path,
+    recursive: bool,
     expanded: &mut Vec<BatchInput>,
 ) -> Result<(), CliError> {
     let mut entries = std::fs::read_dir(dir)
@@ -774,8 +808,10 @@ fn collect_stl_files(
             })?;
 
         if file_type.is_dir() {
-            collect_stl_files(root, &path, expanded)?;
-        } else if file_type.is_file() && is_stl_path(&path) {
+            if recursive {
+                collect_supported_mesh_files(root, &path, recursive, expanded)?;
+            }
+        } else if file_type.is_file() && is_supported_mesh_path(&path) {
             let output_relative = path
                 .strip_prefix(root)
                 .map(PathBuf::from)
@@ -787,6 +823,7 @@ fn collect_stl_files(
             expanded.push(BatchInput {
                 path,
                 output_relative,
+                preserve_extension_in_output: false,
             });
         }
     }
@@ -794,10 +831,10 @@ fn collect_stl_files(
     Ok(())
 }
 
-fn is_stl_path(path: &Path) -> bool {
+fn is_supported_mesh_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| ext.eq_ignore_ascii_case("stl"))
+        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "stl" | "obj" | "3mf"))
         .unwrap_or(false)
 }
 
@@ -949,6 +986,7 @@ mod tests {
             vec![BatchInput {
                 path: PathBuf::from("test.stl"),
                 output_relative: PathBuf::from("test.stl"),
+                preserve_extension_in_output: false,
             }]
         );
         assert_eq!(config.output_file, Some(PathBuf::from("out.png")));
@@ -1167,7 +1205,10 @@ mod tests {
         let nested = root.join("nested");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(root.join("cube.stl"), b"").unwrap();
+        std::fs::write(root.join("cube.obj"), b"").unwrap();
+        std::fs::write(root.join("cube.3MF"), b"").unwrap();
         std::fs::write(nested.join("sphere.STL"), b"").unwrap();
+        std::fs::write(nested.join("sphere.OBJ"), b"").unwrap();
         std::fs::write(nested.join("ignore.txt"), b"").unwrap();
 
         let args = make_args(&[
@@ -1180,16 +1221,73 @@ mod tests {
         let config = build_batch_config(args).unwrap();
 
         assert!(config.recursive);
-        assert_eq!(config.inputs.len(), 2);
+        assert_eq!(config.inputs.len(), 5);
         assert!(config.inputs.contains(&BatchInput {
             path: root.join("cube.stl"),
             output_relative: PathBuf::from("cube.stl"),
+            preserve_extension_in_output: true,
+        }));
+        assert!(config.inputs.contains(&BatchInput {
+            path: root.join("cube.obj"),
+            output_relative: PathBuf::from("cube.obj"),
+            preserve_extension_in_output: true,
+        }));
+        assert!(config.inputs.contains(&BatchInput {
+            path: root.join("cube.3MF"),
+            output_relative: PathBuf::from("cube.3MF"),
+            preserve_extension_in_output: true,
         }));
         assert!(config.inputs.contains(&BatchInput {
             path: nested.join("sphere.STL"),
             output_relative: PathBuf::from("nested/sphere.STL"),
+            preserve_extension_in_output: true,
+        }));
+        assert!(config.inputs.contains(&BatchInput {
+            path: nested.join("sphere.OBJ"),
+            output_relative: PathBuf::from("nested/sphere.OBJ"),
+            preserve_extension_in_output: true,
         }));
         assert_eq!(config.output_dir, Some(PathBuf::from("output/")));
+    }
+
+    #[test]
+    fn test_directory_input_expands_supported_formats_without_recursing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        let nested = root.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(root.join("cube.stl"), b"").unwrap();
+        std::fs::write(root.join("cube.OBJ"), b"").unwrap();
+        std::fs::write(root.join("cube.3mf"), b"").unwrap();
+        std::fs::write(root.join("ignore.txt"), b"").unwrap();
+        std::fs::write(nested.join("sphere.stl"), b"").unwrap();
+
+        let args = make_args(&["stl-render", root.to_str().unwrap(), "-o", "output/"]);
+        let config = build_batch_config(args).unwrap();
+
+        assert!(!config.recursive);
+        assert_eq!(config.inputs.len(), 3);
+        assert!(config.inputs.contains(&BatchInput {
+            path: root.join("cube.stl"),
+            output_relative: PathBuf::from("cube.stl"),
+            preserve_extension_in_output: true,
+        }));
+        assert!(config.inputs.contains(&BatchInput {
+            path: root.join("cube.OBJ"),
+            output_relative: PathBuf::from("cube.OBJ"),
+            preserve_extension_in_output: true,
+        }));
+        assert!(config.inputs.contains(&BatchInput {
+            path: root.join("cube.3mf"),
+            output_relative: PathBuf::from("cube.3mf"),
+            preserve_extension_in_output: true,
+        }));
+        assert!(
+            !config
+                .inputs
+                .iter()
+                .any(|input| input.path == nested.join("sphere.stl"))
+        );
     }
 
     #[test]
@@ -1198,6 +1296,7 @@ mod tests {
             inputs: vec![BatchInput {
                 path: PathBuf::from("models/nested/cube.stl"),
                 output_relative: PathBuf::from("nested/cube.stl"),
+                preserve_extension_in_output: false,
             }],
             output_dir: Some(PathBuf::from("output")),
             output_file: None,

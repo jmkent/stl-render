@@ -1,6 +1,6 @@
 # stl-render
 
-A fast, headless CLI tool to render STL and 3MF files to PNG images.
+A fast, headless CLI tool to render STL, OBJ, and 3MF files to PNG images.
 
 ```bash
 stl-render model.stl -o preview.png
@@ -16,7 +16,7 @@ stl-render model.3mf -o preview.png
 ## Features
 
 - **Headless:** No GPU or display required. Works in CI, containers, scripts.
-- **Multiple formats:** STL (binary/ASCII) and 3MF with auto-detection.
+- **Multiple formats:** STL (binary/ASCII), OBJ, and 3MF with auto-detection.
 - **Animated GIF:** `--animate` produces rotating preview animations.
 - **Deterministic:** Same input + flags = identical output bytes.
 - **Handles large files:** Streams 500MB+ STLs with bounded memory.
@@ -149,7 +149,7 @@ See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
 stl-render <INPUT>... -o <OUTPUT> [OPTIONS]
 
 Arguments:
-  <INPUT>...  Mesh file(s) - STL or 3MF, supports multiple files
+  <INPUT>...  Mesh file(s) - STL, OBJ, or 3MF; directories expand to supported files
 
 Options:
   -o, --output <PATH>           Output PNG path or directory (use trailing / for directory)
@@ -157,7 +157,7 @@ Options:
       --height <PX>             Image height [default: 512]
       --view <PRESET>           Single view preset
       --views <LIST>            Multiple views (comma-separated), outputs to directory
-  -r, --recursive               Recursively render .stl files from input directories
+  -r, --recursive               Recursively render supported mesh files from input directories
       --azimuth <DEG>           Camera azimuth angle (conflicts with --view)
       --elevation <DEG>         Camera elevation angle (conflicts with --view)
       --padding <RATIO>         Padding around model [default: 0.08]
@@ -209,7 +209,7 @@ cargo clippy
 
 ### Generate Test Fixtures
 
-Test mesh files (STL and 3MF) are generated using Python (optional, only for regenerating fixtures):
+Test mesh files (STL, OBJ, and 3MF) are generated using Python (optional, only for regenerating fixtures):
 
 ```bash
 cd tools/fixtures
@@ -244,7 +244,7 @@ src/
   lib.rs            # Public API, MeshReader
 
 examples/           # Rendered example images
-fixtures/           # Test mesh files (STL and 3MF)
+fixtures/           # Test mesh files (STL, OBJ, and 3MF)
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.

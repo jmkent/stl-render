@@ -60,10 +60,14 @@ pub fn parse_obj<R: Read>(reader: R) -> Result<Vec<Triangle>, StlError> {
             "f" => {
                 // Face: f v1 v2 v3 ... or f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 ...
                 let indices: Vec<usize> = parts
-                    .map(|s| parse_face_vertex(s))
+                    .map(parse_face_vertex)
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|e| {
-                        StlError::InvalidFormat(format!("invalid face at line {}: {}", line_num + 1, e))
+                        StlError::InvalidFormat(format!(
+                            "invalid face at line {}: {}",
+                            line_num + 1,
+                            e
+                        ))
                     })?;
 
                 if indices.len() < 3 {

@@ -991,7 +991,10 @@ fn test_batch_recursive_renders_nested_directories() {
     std::fs::create_dir_all(&nested).unwrap();
     std::fs::create_dir(&outdir).unwrap();
     std::fs::copy("fixtures/cube.stl", input_root.join("cube.stl")).unwrap();
-    std::fs::copy("fixtures/sphere.stl", nested.join("sphere.stl")).unwrap();
+    std::fs::copy("fixtures/cube.obj", input_root.join("cube.OBJ")).unwrap();
+    std::fs::copy("fixtures/cube.3mf", input_root.join("cube.3MF")).unwrap();
+    std::fs::copy("fixtures/sphere.obj", nested.join("sphere.obj")).unwrap();
+    std::fs::copy("fixtures/sphere.3mf", nested.join("sphere.3mf")).unwrap();
     std::fs::write(nested.join("ignore.txt"), "not an stl").unwrap();
 
     let output = stl_render()
@@ -1007,8 +1010,11 @@ fn test_batch_recursive_renders_nested_directories() {
         .unwrap();
 
     assert!(output.status.success());
-    assert!(outdir.join("cube.png").exists());
-    assert!(outdir.join("nested/sphere.png").exists());
+    assert!(outdir.join("cube.stl.png").exists());
+    assert!(outdir.join("cube.OBJ.png").exists());
+    assert!(outdir.join("cube.3MF.png").exists());
+    assert!(outdir.join("nested/sphere.obj.png").exists());
+    assert!(outdir.join("nested/sphere.3mf.png").exists());
     assert!(!outdir.join("nested/ignore.png").exists());
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1016,7 +1022,7 @@ fn test_batch_recursive_renders_nested_directories() {
         stderr.contains(&format!(
             "Rendered {} as {} successful",
             input_root.join("cube.stl").display(),
-            outdir.join("cube.png").display()
+            outdir.join("cube.stl.png").display()
         )),
         "Should show root conversion line: {}",
         stderr
@@ -1024,10 +1030,97 @@ fn test_batch_recursive_renders_nested_directories() {
     assert!(
         stderr.contains(&format!(
             "Rendered {} as {} successful",
-            nested.join("sphere.stl").display(),
-            outdir.join("nested/sphere.png").display()
+            input_root.join("cube.OBJ").display(),
+            outdir.join("cube.OBJ.png").display()
         )),
-        "Should show nested conversion line: {}",
+        "Should show uppercase OBJ conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            input_root.join("cube.3MF").display(),
+            outdir.join("cube.3MF.png").display()
+        )),
+        "Should show uppercase 3MF conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            nested.join("sphere.obj").display(),
+            outdir.join("nested/sphere.obj.png").display()
+        )),
+        "Should show nested OBJ conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            nested.join("sphere.3mf").display(),
+            outdir.join("nested/sphere.3mf.png").display()
+        )),
+        "Should show nested 3MF conversion line: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_batch_directory_input_renders_supported_formats_without_recursive() {
+    let dir = tempdir().unwrap();
+    let input_root = dir.path().join("models");
+    let nested = input_root.join("nested");
+    let outdir = dir.path().join("output");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir(&outdir).unwrap();
+    std::fs::copy("fixtures/cube.stl", input_root.join("cube.stl")).unwrap();
+    std::fs::copy("fixtures/cube.obj", input_root.join("cube.OBJ")).unwrap();
+    std::fs::copy("fixtures/cube.3mf", input_root.join("cube.3mf")).unwrap();
+    std::fs::copy("fixtures/sphere.stl", nested.join("sphere.stl")).unwrap();
+
+    let output = stl_render()
+        .args([
+            input_root.to_str().unwrap(),
+            "-o",
+            &format!("{}/", outdir.display()),
+            "--aa",
+            "none",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(outdir.join("cube.stl.png").exists());
+    assert!(outdir.join("cube.OBJ.png").exists());
+    assert!(outdir.join("cube.3mf.png").exists());
+    assert!(!outdir.join("nested/sphere.png").exists());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            input_root.join("cube.stl").display(),
+            outdir.join("cube.stl.png").display()
+        )),
+        "Should show STL conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            input_root.join("cube.OBJ").display(),
+            outdir.join("cube.OBJ.png").display()
+        )),
+        "Should show uppercase OBJ conversion line: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains(&format!(
+            "Rendered {} as {} successful",
+            input_root.join("cube.3mf").display(),
+            outdir.join("cube.3mf.png").display()
+        )),
+        "Should show 3MF conversion line: {}",
         stderr
     );
 }
@@ -1398,7 +1491,9 @@ fn test_render_config_builder() {
 
 #[test]
 fn test_render_config_builder_defaults() {
-    use stl_render::{AntiAliasing, Background, LightingPreset, RenderConfigBuilder, ViewConfig, ViewPreset};
+    use stl_render::{
+        AntiAliasing, Background, LightingPreset, RenderConfigBuilder, ViewConfig, ViewPreset,
+    };
 
     let config = RenderConfigBuilder::new("input.stl", "output.png").build();
 
@@ -1454,7 +1549,7 @@ fn test_render_config_builder_solid_background() {
 
 #[test]
 fn test_render_to_image_returns_image_and_metadata() {
-    use stl_render::{render_to_image, RenderConfigBuilder};
+    use stl_render::{RenderConfigBuilder, render_to_image};
 
     let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .size(128)
@@ -1470,7 +1565,7 @@ fn test_render_to_image_returns_image_and_metadata() {
 
 #[test]
 fn test_render_to_image_with_print_grid() {
-    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
+    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
 
     let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .view(ViewPreset::PrintGrid)
@@ -1577,7 +1672,7 @@ fn test_3mf_with_all_view_presets() {
 
 #[test]
 fn test_3mf_stl_produce_same_output() {
-    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
+    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
 
     let stl_config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .view(ViewPreset::Iso)
@@ -1733,7 +1828,7 @@ fn test_obj_with_all_view_presets() {
 
 #[test]
 fn test_obj_stl_produce_same_triangle_count() {
-    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
+    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
 
     let stl_config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .view(ViewPreset::Iso)
@@ -1939,7 +2034,7 @@ fn test_animate_without_flag_produces_png() {
 
 #[test]
 fn test_animate_builder_api() {
-    use stl_render::{render, RenderConfigBuilder};
+    use stl_render::{RenderConfigBuilder, render};
 
     let dir = tempfile::tempdir().unwrap();
     let output = dir.path().join("cube.gif");

@@ -157,13 +157,8 @@ impl Camera {
         let view_matrix = Mat4::look_at_rh(eye, center, Vec3::Z);
 
         // Use fixed sphere-based projection instead of per-frame bounds projection
-        let proj_matrix = compute_ortho_projection_fixed(
-            sphere_radius,
-            width,
-            height,
-            padding,
-            distance,
-        );
+        let proj_matrix =
+            compute_ortho_projection_fixed(sphere_radius, width, height, padding, distance);
 
         Self {
             view_matrix,
@@ -301,14 +296,7 @@ fn compute_ortho_projection_fixed(
     };
 
     // Center projection at origin (camera looks at model center)
-    Mat4::orthographic_rh(
-        -half_w,
-        half_w,
-        -half_h,
-        half_h,
-        0.1,
-        distance * 4.0,
-    )
+    Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, 0.1, distance * 4.0)
 }
 
 #[cfg(test)]

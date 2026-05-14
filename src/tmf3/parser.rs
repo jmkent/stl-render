@@ -2,8 +2,8 @@
 
 use std::io::{Read, Seek};
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::mesh::compute_normal;
 use crate::stl::{StlError, Triangle};
@@ -16,9 +16,8 @@ use crate::stl::{StlError, Triangle};
 /// 3. Parses the XML to extract vertices and triangles
 /// 4. Computes normals from vertex positions
 pub fn parse_3mf<R: Read + Seek>(reader: R) -> Result<Vec<Triangle>, StlError> {
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
-        StlError::InvalidFormat(format!("invalid ZIP archive: {}", e))
-    })?;
+    let mut archive = zip::ZipArchive::new(reader)
+        .map_err(|e| StlError::InvalidFormat(format!("invalid ZIP archive: {}", e)))?;
 
     // Find the model file - typically 3D/3dmodel.model
     let model_path = find_model_file(&mut archive)?;
@@ -38,18 +37,14 @@ pub fn parse_3mf<R: Read + Seek>(reader: R) -> Result<Vec<Triangle>, StlError> {
 /// Find the model file path within the ZIP archive.
 fn find_model_file<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<String, StlError> {
     // Common paths for 3MF model files
-    let candidates = [
-        "3D/3dmodel.model",
-        "3d/3dmodel.model",
-        "3D/3DModel.model",
-    ];
+    let candidates = ["3D/3dmodel.model", "3d/3dmodel.model", "3D/3DModel.model"];
 
     for candidate in &candidates {
         for i in 0..archive.len() {
-            if let Ok(file) = archive.by_index(i) {
-                if file.name().eq_ignore_ascii_case(candidate) {
-                    return Ok(file.name().to_string());
-                }
+            if let Ok(file) = archive.by_index(i)
+                && file.name().eq_ignore_ascii_case(candidate)
+            {
+                return Ok(file.name().to_string());
             }
         }
     }
@@ -104,7 +99,10 @@ fn parse_model_xml(xml: &str) -> Result<Vec<Triangle>, StlError> {
                         {
                             return Err(StlError::InvalidFormat(format!(
                                 "triangle references invalid vertex index: {}, {}, {} (only {} vertices)",
-                                v1, v2, v3, current_vertices.len()
+                                v1,
+                                v2,
+                                v3,
+                                current_vertices.len()
                             )));
                         }
 
@@ -179,7 +177,9 @@ fn parse_vertex(e: &quick_xml::events::BytesStart<'_>) -> Result<[f32; 3], StlEr
 }
 
 /// Parse a triangle element's v1, v2, v3 attributes.
-fn parse_triangle_indices(e: &quick_xml::events::BytesStart<'_>) -> Result<(usize, usize, usize), StlError> {
+fn parse_triangle_indices(
+    e: &quick_xml::events::BytesStart<'_>,
+) -> Result<(usize, usize, usize), StlError> {
     let mut v1: Option<usize> = None;
     let mut v2: Option<usize> = None;
     let mut v3: Option<usize> = None;

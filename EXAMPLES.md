@@ -257,10 +257,10 @@ stl-render model.stl -o preview.png --metadata info.json
 
 ### Multiple Files
 
-Render multiple STL files to a directory:
+Render multiple mesh files to a directory:
 
 ```bash
-# Render all STL files to output directory
+# Render all shell-expanded STL files to output directory
 stl-render *.stl -o output/
 
 # Output naming: model.stl -> output/model.png
@@ -275,19 +275,27 @@ Rendered fixtures/truncated.stl as output/truncated.png failed
 
 ### Recursive Directories
 
-Render every `.stl` file under a directory tree:
+Render every supported mesh file under a directory tree:
 
 ```bash
 stl-render models/ -o output/ --recursive
 stl-render models/ -o output/ --recursive --views front,iso,print
 ```
 
-Nested input paths are preserved under the output directory:
+Directory inputs include `.stl`, `.obj`, and `.3mf` files case-insensitively. Nested input paths are preserved under the output directory:
 
 ```text
 models/cube.stl -> output/cube.png
 models/parts/bracket.stl -> output/parts/bracket.png
 models/parts/bracket.stl --views front,iso -> output/parts/bracket.front.png, output/parts/bracket.iso.png
+```
+
+If multiple source formats would otherwise write the same target, the source extension is kept in the output name:
+
+```text
+models/cube.stl -> output/cube.stl.png
+models/cube.obj -> output/cube.obj.png
+models/cube.3mf -> output/cube.3mf.png
 ```
 
 ### Multiple Views

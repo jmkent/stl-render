@@ -362,6 +362,8 @@ uv run generate_fixtures.py -o ../../fixtures --large
 - [x] **Test:** `stl-render models/ -o outdir/ --recursive` traverses nested directories
 - [x] **Test:** recursive output preserves nested paths under output directory
 - [x] Implement `--recursive` / `-r` directory traversal
+- [x] **Test:** directory inputs include STL, OBJ, and 3MF files case-insensitively
+- [x] **Test:** same-stem multi-format inputs avoid output collisions
 
 #### Multiple Views
 - [x] **Test:** `--views front,back,iso` produces 3 PNGs per input
