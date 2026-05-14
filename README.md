@@ -3,14 +3,21 @@
 A fast, headless CLI tool to render STL files to PNG images.
 
 ```bash
-stl-render model.stl -o preview.png --view iso
+stl-render model.stl -o preview.png
 ```
+
+| | |
+|---|---|
+| ![3DBenchy Blue Grey](examples/benchy_print_bluegrey.png) | ![3DBenchy Tan](examples/benchy_print_tan.png) |
+
+<sub>Renders of [3DBenchy](https://www.3dbenchy.com) - the 3D printing benchmark model (public domain)</sub>
 
 ## Features
 
 - **Headless:** No GPU or display required. Works in CI, containers, scripts.
 - **Deterministic:** Same input + flags = identical output bytes.
 - **Handles large files:** Streams 500MB+ STLs with bounded memory.
+- **Print-ready:** `--view print` shows models in Z-up orientation for 3D printing.
 - **Simple:** One STL in, one PNG out. No configuration files.
 
 ## Installation
@@ -28,89 +35,59 @@ cargo build --release
 ./target/release/stl-render --help
 ```
 
-## Usage
-
-### Basic
+## Quick Start
 
 ```bash
 # Render with default settings (iso view, 512x512, transparent background)
 stl-render model.stl -o preview.png
 
-# Specify view and size
-stl-render model.stl -o preview.png --view front --width 1024 --height 1024
+# Print bed view with tan filament color
+stl-render model.stl -o preview.png --view print --material-color "#C19A6B"
 
-# Custom camera angles
-stl-render model.stl -o preview.png --azimuth 45 --elevation 30
+# High quality render
+stl-render model.stl -o preview.png --view print --aa 4x --width 1024 --height 1024
 ```
 
-### View Presets
+## View Presets
+
+| Front | Isometric | Print (Z-up) |
+|-------|-----------|--------------|
+| ![Front](examples/view_front.png) | ![Iso](examples/view_iso.png) | ![Print](examples/view_print.png) |
 
 ```bash
---view front    # Looking down -Z axis
---view back     # Looking down +Z axis
---view left     # Looking down +X axis
---view right    # Looking down -X axis
---view top      # Looking down -Y axis
---view bottom   # Looking down +Y axis
+--view front    # Looking at front face
+--view back     # Looking at back face  
+--view left     # Looking at left face
+--view right    # Looking at right face
+--view top      # Looking down from above
+--view bottom   # Looking up from below
 --view iso      # Isometric (45° azimuth, 35° elevation)
---view print	# Print bed view - down -Z axis with 30/30 azimuth/elevation
+--view print    # Print bed view (Z-up, 30° tilt)
 ```
 
-### Appearance
+The `print` view is designed for 3D printing - it keeps the Z axis vertical (as it would be on a print bed) while tilting slightly to show the top surface.
+
+## Lighting Presets
+
+| Flat | Studio | Technical |
+|------|--------|-----------|
+| ![Flat](examples/lighting_flat.png) | ![Studio](examples/lighting_studio.png) | ![Technical](examples/lighting_technical.png) |
 
 ```bash
-# Solid background
-stl-render model.stl -o preview.png --background solid --background-color "#ffffff"
-
-# Material color
-stl-render model.stl -o preview.png --material-color "#ff6600"
-
-# Lighting presets
-stl-render model.stl -o preview.png --lighting flat      # Single front light
-stl-render model.stl -o preview.png --lighting studio    # Key + fill + rim
-stl-render model.stl -o preview.png --lighting technical # Uniform
+--lighting flat       # Single front light
+--lighting studio     # Key + fill + rim (default)
+--lighting technical  # Uniform multi-directional
 ```
 
-### Image Quality
+## More Examples
 
-```bash
-# Anti-aliasing (supersampling)
-stl-render model.stl -o preview.png --aa none  # Fastest
-stl-render model.stl -o preview.png --aa 2x    # Default, good quality
-stl-render model.stl -o preview.png --aa 4x    # Best quality, slower
-
-# Padding (space around model)
-stl-render model.stl -o preview.png --padding 0.1  # 10% margin
-```
-
-### Metadata
-
-```bash
-# Output render metadata as JSON
-stl-render model.stl -o preview.png --metadata info.json
-```
-
-Metadata includes triangle count, bounding box, dimensions, and render settings.
-
-### Piping
-
-```bash
-# Read from stdin
-cat model.stl | stl-render - -o preview.png
-
-# Write to stdout
-stl-render model.stl -o - > preview.png
-```
-
-### Batch Processing
-
-```bash
-# Multiple files to directory
-stl-render *.stl -o output/
-
-# Multiple views per file
-stl-render model.stl -o output/ --views front,back,iso
-```
+See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
+- Material colors (filament presets)
+- Background options
+- Anti-aliasing comparison
+- Custom camera angles
+- Metadata output
+- Piping and automation
 
 ## CLI Reference
 
@@ -121,23 +98,23 @@ Arguments:
   <INPUT>   STL file path, or - for stdin
 
 Options:
-  -o, --output <PATH>        Output PNG path, or - for stdout
-      --width <PX>           Image width [default: 512]
-      --height <PX>          Image height [default: 512]
-      --view <PRESET>        View preset: front|back|left|right|top|bottom|iso
-      --azimuth <DEG>        Camera azimuth angle (conflicts with --view)
-      --elevation <DEG>      Camera elevation angle (conflicts with --view)
-      --padding <RATIO>      Padding around model [default: 0.08]
-      --aa <LEVEL>           Anti-aliasing: none|2x|4x [default: 2x]
-      --background <TYPE>    Background: transparent|solid [default: transparent]
+  -o, --output <PATH>           Output PNG path, or - for stdout
+      --width <PX>              Image width [default: 512]
+      --height <PX>             Image height [default: 512]
+      --view <PRESET>           View: front|back|left|right|top|bottom|iso|print
+      --azimuth <DEG>           Camera azimuth angle (conflicts with --view)
+      --elevation <DEG>         Camera elevation angle (conflicts with --view)
+      --padding <RATIO>         Padding around model [default: 0.08]
+      --aa <LEVEL>              Anti-aliasing: none|2x|4x [default: 2x]
+      --background <TYPE>       Background: transparent|solid [default: transparent]
       --background-color <HEX>  Background color for solid [default: #ffffff]
-      --material-color <HEX> Model color [default: #cccccc]
-      --lighting <PRESET>    Lighting: flat|studio|technical [default: studio]
-      --metadata <PATH>      Write render metadata JSON
-      --quiet                Suppress progress output
-      --verbose              Detailed progress
-  -h, --help                 Print help
-  -V, --version              Print version
+      --material-color <HEX>    Model color [default: #cccccc]
+      --lighting <PRESET>       Lighting: flat|studio|technical [default: studio]
+      --metadata <PATH>         Write render metadata JSON
+      --quiet                   Suppress progress output
+      --verbose                 Show progress info
+  -h, --help                    Print help
+  -V, --version                 Print version
 ```
 
 ## Exit Codes
@@ -155,57 +132,23 @@ Options:
 
 - Rust 1.70+
 - No GPU required
-- Python 3.10+ and [uv](https://docs.astral.sh/uv/) (for generating test fixtures only)
 
-### Build
+### Build & Test
 
 ```bash
-cargo build
 cargo build --release
-```
-
-### Test
-
-```bash
-# Run all tests
 cargo test
-
-# Run with output
-cargo test -- --nocapture
-
-# Run specific test
-cargo test test_parse_binary_stl
-```
-
-### Lint
-
-```bash
 cargo clippy
-cargo fmt --check
 ```
 
 ### Generate Test Fixtures
 
-Test STL files are generated programmatically using numpy-stl. Python is **not** required to build or run stl-render, only to regenerate fixtures.
+Test STL files are generated using Python/numpy-stl (optional, only for regenerating fixtures):
 
 ```bash
 cd tools/fixtures
-
-# Generate all fixtures to fixtures/ directory
 uv run generate_fixtures.py -o ../../fixtures
-
-# Or with higher-detail sphere
-uv run generate_fixtures.py -o ../../fixtures --sphere-subdivisions 4
 ```
-
-This creates:
-- Basic shapes: cube, sphere, cylinder
-- Edge cases: tall column, flat tile, long beam
-- Minimal: single triangle
-- Invalid: empty, truncated, degenerate triangles
-- Both binary and ASCII formats
-
-See [tools/fixtures/README.md](tools/fixtures/README.md) for details.
 
 ### Project Structure
 
@@ -213,61 +156,22 @@ See [tools/fixtures/README.md](tools/fixtures/README.md) for details.
 src/
   main.rs           # Entry point
   cli.rs            # Argument parsing
-  stl/              # STL parsing (streaming)
+  stl/              # STL parsing (streaming, mmap)
   mesh.rs           # Bounding box, normals
-  camera.rs         # View transforms
+  camera.rs         # View transforms, projection
   render.rs         # Software rasterizer
   output.rs         # PNG encoding
   lib.rs            # Public API
 
-fixtures/           # Test STL files (generated)
-  golden/           # Reference PNGs for comparison
-
-tools/
-  fixtures/         # Python fixture generator (uv project)
+examples/           # Rendered example images
+fixtures/           # Test STL files
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 
-## Testing
-
-### Unit Tests
-
-Each module has unit tests covering:
-- STL parsing (binary and ASCII)
-- Bounding box computation
-- Camera projection math
-- Config validation
-
-### Golden Image Tests
-
-Reference PNGs in `fixtures/golden/` are compared against rendered output. Run with:
-
-```bash
-cargo test golden
-```
-
-### Test Fixtures
-
-Generated via `tools/fixtures/generate_fixtures.py`:
-
-| File | Description | Triangles |
-|------|-------------|-----------|
-| `cube.stl` | Unit cube, binary | 12 |
-| `cube_ascii.stl` | Unit cube, ASCII | 12 |
-| `sphere.stl` | Icosphere | 1280 |
-| `cylinder.stl` | Cylinder | 128 |
-| `tall_column.stl` | Tall thin box (aspect ratio) | 12 |
-| `flat_tile.stl` | Flat wide box (near-planar) | 12 |
-| `long_beam.stl` | Long thin box (elongated) | 12 |
-| `single_triangle.stl` | Minimal valid STL | 1 |
-| `degenerate.stl` | Zero-area triangles | 3 |
-| `empty.stl` | Valid, 0 triangles | 0 |
-| `truncated.stl` | Invalid (truncated) | - |
-
 ## Performance
 
-Typical render times (512×512, 2x AA):
+Typical render times (512x512, 2x AA, Apple M1):
 
 | STL Size | Triangles | Time |
 |----------|-----------|------|
@@ -275,7 +179,11 @@ Typical render times (512×512, 2x AA):
 | 50 MB | ~1M | ~500ms |
 | 500 MB | ~10M | ~2s |
 
-Memory usage is bounded by output resolution, not input size. A 500MB STL renders with <200MB RSS.
+Memory usage is bounded by output resolution, not input size.
+
+## Acknowledgments
+
+Example renders include [3DBenchy](https://www.3dbenchy.com), the 3D printing benchmark model created by Creative Tools, now in the public domain.
 
 ## License
 

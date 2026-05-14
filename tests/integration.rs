@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::process::Command;
 use tempfile::tempdir;
 
@@ -302,4 +303,110 @@ fn test_aa_none_vs_2x_differ() {
     let aa2x_data = std::fs::read(&aa2x).unwrap();
 
     assert_ne!(none_data, aa2x_data, "AA should produce different output than no AA");
+}
+
+#[test]
+fn test_read_stl_from_stdin() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("stdin.png");
+
+    let cube_data = std::fs::read("fixtures/cube.stl").unwrap();
+
+    let mut child = stl_render()
+        .args(["-", "-o", output.to_str().unwrap()])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    child.stdin.take().unwrap().write_all(&cube_data).unwrap();
+    let status = child.wait().unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 512);
+}
+
+#[test]
+fn test_background_transparent_has_alpha() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("transparent.png");
+
+    stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--background", "transparent",
+        ])
+        .status()
+        .unwrap();
+
+    let img = image::open(&output).unwrap().into_rgba8();
+    let transparent_pixels: usize = img.pixels().filter(|p| p[3] == 0).count();
+
+    assert!(transparent_pixels > 1000, "Transparent background should have alpha=0 pixels");
+}
+
+#[test]
+fn test_background_solid_uses_color() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("solid.png");
+
+    stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--background", "solid",
+            "--background-color", "#ff0000",
+        ])
+        .status()
+        .unwrap();
+
+    let img = image::open(&output).unwrap().into_rgba8();
+
+    // Find a corner pixel that should be background
+    let corner = img.get_pixel(0, 0);
+    assert_eq!(corner[0], 255, "Background should be red");
+    assert_eq!(corner[3], 255, "Solid background should have alpha=255");
+}
+
+#[test]
+fn test_default_background_is_transparent() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("default.png");
+
+    stl_render()
+        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap()])
+        .status()
+        .unwrap();
+
+    let img = image::open(&output).unwrap().into_rgba8();
+
+    // Corner should be transparent (default)
+    let corner = img.get_pixel(0, 0);
+    assert_eq!(corner[3], 0, "Default background should be transparent");
+}
+
+#[test]
+fn test_metadata_contains_required_fields() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("out.png");
+    let meta = dir.path().join("meta.json");
+
+    stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--metadata", meta.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+
+    let content = std::fs::read_to_string(&meta).unwrap();
+
+    assert!(content.contains("\"triangle_count\""), "Should have triangle_count");
+    assert!(content.contains("\"dimensions\""), "Should have dimensions");
+    assert!(content.contains("\"bounding_box\""), "Should have bounding_box");
+    assert!(content.contains("\"input_file\""), "Should have input_file");
 }

@@ -46,13 +46,21 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
     }
 
     // Parse STL and compute bounds (first pass)
-    let (bounds, triangle_count) = if config.input.to_str() == Some("-") {
-        // Stdin: placeholder values (stdin support deferred)
-        (BoundingBox::new(), 0)
+    let is_stdin = config.input.to_str() == Some("-");
+    let reader = if is_stdin {
+        StlReader::from_reader(std::io::stdin())?
     } else {
-        let reader = StlReader::open(&config.input)?;
-        mesh::compute_bounds(&reader)?
+        StlReader::open(&config.input)?
     };
+    let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
+
+    if config.verbose {
+        let dims = bounds.dimensions();
+        eprintln!(
+            "Loaded {} triangles, bounds: [{:.2}, {:.2}, {:.2}]",
+            triangle_count, dims.x, dims.y, dims.z
+        );
+    }
 
     // Compute render dimensions (scale up for AA)
     let aa_scale = match config.aa {
@@ -82,22 +90,27 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
     );
 
     // Render triangles (second pass)
-    if config.input.to_str() != Some("-") {
-        let reader = StlReader::open(&config.input)?;
-        for result in reader.triangles()? {
-            let tri = result?;
-            fb.rasterize_triangle(&tri, &cam, config);
-        }
+    for result in reader.triangles()? {
+        let tri = result?;
+        fb.rasterize_triangle(&tri, &cam, config);
     }
 
     // Downsample if AA enabled
     let image = fb.into_image(config.aa);
+
+    if config.verbose {
+        eprintln!("Rendered {}x{} image", config.width, config.height);
+    }
 
     // Write output
     if config.output.to_str() == Some("-") {
         output::write_png_to_stdout(&image)?;
     } else {
         output::write_png(&image, &config.output)?;
+    }
+
+    if config.verbose && config.output.to_str() != Some("-") {
+        eprintln!("Wrote {}", config.output.display());
     }
 
     // Write metadata if requested

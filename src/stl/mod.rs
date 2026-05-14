@@ -2,6 +2,8 @@ mod ascii;
 mod binary;
 mod parser;
 
+use std::io::Read;
+use std::ops::Deref;
 use std::path::Path;
 
 use thiserror::Error;
@@ -26,8 +28,24 @@ pub struct Triangle {
     pub normal: [f32; 3],
 }
 
+enum StlData {
+    Mmap(memmap2::Mmap),
+    Memory(Vec<u8>),
+}
+
+impl Deref for StlData {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        match self {
+            StlData::Mmap(m) => m,
+            StlData::Memory(v) => v,
+        }
+    }
+}
+
 pub struct StlReader {
-    data: memmap2::Mmap,
+    data: StlData,
     format: StlFormat,
     triangle_count: Option<u64>,
 }
@@ -48,7 +66,28 @@ impl StlReader {
         };
 
         Ok(Self {
-            data,
+            data: StlData::Mmap(data),
+            format,
+            triangle_count,
+        })
+    }
+
+    pub fn from_reader<R: Read>(mut reader: R) -> Result<Self, StlError> {
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data)?;
+
+        if data.is_empty() {
+            return Err(StlError::InvalidFormat("empty input".into()));
+        }
+
+        let format = parser::detect_format(&data);
+        let triangle_count = match format {
+            StlFormat::Binary => Some(binary::read_triangle_count(&data)? as u64),
+            StlFormat::Ascii => None,
+        };
+
+        Ok(Self {
+            data: StlData::Memory(data),
             format,
             triangle_count,
         })
