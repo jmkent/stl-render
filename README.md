@@ -29,7 +29,7 @@ cargo install stl-render
 Or build from source:
 
 ```bash
-git clone https://github.com/youruser/stl-render
+git clone https://github.com/jmkent/stl-render
 cd stl-render
 cargo build --release
 ./target/release/stl-render --help

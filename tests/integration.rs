@@ -410,3 +410,73 @@ fn test_metadata_contains_required_fields() {
     assert!(content.contains("\"bounding_box\""), "Should have bounding_box");
     assert!(content.contains("\"input_file\""), "Should have input_file");
 }
+
+#[test]
+fn test_large_file_renders_successfully() {
+    // Skip if large fixture doesn't exist (not committed to repo)
+    let large_path = std::path::Path::new("fixtures/large_1m.stl");
+    if !large_path.exists() {
+        eprintln!("Skipping large file test - fixtures/large_1m.stl not found");
+        return;
+    }
+
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("large.png");
+
+    let status = stl_render()
+        .args([
+            "fixtures/large_1m.stl",
+            "-o", output.to_str().unwrap(),
+            "--aa", "none",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success(), "Large file should render successfully");
+    assert!(output.exists());
+
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 512);
+}
+
+#[test]
+fn test_truncated_file_error() {
+    let output = stl_render()
+        .args(["fixtures/truncated.stl", "-o", "/tmp/truncated.png"])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success(), "Truncated file should fail");
+    assert_eq!(output.status.code(), Some(2), "Should be input error (code 2)");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error") || stderr.contains("Error"),
+        "Should print error message: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_verbose_shows_triangle_count() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("verbose.png");
+
+    let result = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--verbose",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(result.status.success());
+
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("12 triangles"),
+        "Verbose should show triangle count: {}",
+        stderr
+    );
+}

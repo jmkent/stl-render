@@ -252,7 +252,7 @@ pub fn compute_normal(v0: Vec3, v1: Vec3, v2: Vec3) -> Vec3;
 View and projection:
 ```rust
 pub enum ViewPreset {
-    Front, Back, Left, Right, Top, Bottom, Iso,
+    Front, Back, Left, Right, Top, Bottom, Iso, Print,
 }
 
 pub struct Camera {
