@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,21 @@ pub enum CliError {
 
     #[error("--azimuth and --elevation must be used together")]
     IncompleteCustomView,
+
+    #[error("cannot use --views with --azimuth or --elevation")]
+    ConflictingViewsArgs,
+
+    #[error("cannot use both --view and --views")]
+    ConflictingViewFlags,
+
+    #[error("multiple inputs require output directory (path ending with / or existing directory)")]
+    MultipleInputsRequireDirectory,
+
+    #[error("stdin input (-) cannot be used with multiple inputs or views")]
+    StdinWithBatch,
+
+    #[error("stdout output (-) cannot be used with multiple inputs or views")]
+    StdoutWithBatch,
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -20,10 +35,11 @@ pub enum CliError {
 #[command(about = "Render STL files to PNG images")]
 #[command(version)]
 pub struct Args {
-    /// Input STL file path (use - for stdin)
-    pub input: PathBuf,
+    /// Input STL file(s) - supports multiple files and glob patterns (use - for stdin)
+    #[arg(required = true)]
+    pub inputs: Vec<PathBuf>,
 
-    /// Output PNG path (use - for stdout)
+    /// Output PNG path or directory (use - for stdout, use trailing / for directory)
     #[arg(short, long)]
     pub output: PathBuf,
 
@@ -35,15 +51,19 @@ pub struct Args {
     #[arg(long, default_value = "512")]
     pub height: u32,
 
-    /// View preset: front, back, left, right, top, bottom, iso
+    /// View preset: front, back, left, right, top, bottom, iso, print
     #[arg(long, default_value = "iso")]
     pub view: String,
 
-    /// Camera azimuth angle in degrees (conflicts with --view)
+    /// Multiple views (comma-separated): front,back,iso produces multiple outputs
+    #[arg(long)]
+    pub views: Option<String>,
+
+    /// Camera azimuth angle in degrees (conflicts with --view/--views)
     #[arg(long)]
     pub azimuth: Option<f32>,
 
-    /// Camera elevation angle in degrees (conflicts with --view)
+    /// Camera elevation angle in degrees (conflicts with --view/--views)
     #[arg(long)]
     pub elevation: Option<f32>,
 
@@ -82,6 +102,10 @@ pub struct Args {
     /// Show detailed progress
     #[arg(long)]
     pub verbose: bool,
+
+    /// Abort on first error (default: continue and report all errors)
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -140,25 +164,187 @@ pub struct RenderConfig {
     pub verbose: bool,
 }
 
-pub fn parse_args() -> Result<RenderConfig, RenderError> {
-    let args = Args::parse();
-    build_config(args).map_err(|e| RenderError::Config(e.to_string()))
+#[derive(Debug, Clone)]
+pub struct BatchConfig {
+    pub inputs: Vec<PathBuf>,
+    pub output_dir: Option<PathBuf>,
+    pub output_file: Option<PathBuf>,
+    pub views: Vec<ViewConfig>,
+    pub width: u32,
+    pub height: u32,
+    pub padding: f32,
+    pub aa: AntiAliasing,
+    pub background: Background,
+    pub background_color: [u8; 3],
+    pub material_color: [u8; 3],
+    pub lighting: LightingPreset,
+    pub metadata_path: Option<PathBuf>,
+    pub quiet: bool,
+    pub verbose: bool,
+    pub strict: bool,
 }
 
-fn build_config(args: Args) -> Result<RenderConfig, CliError> {
-    let view = parse_view(&args)?;
+impl BatchConfig {
+    pub fn is_batch_mode(&self) -> bool {
+        self.inputs.len() > 1 || self.views.len() > 1
+    }
+
+    pub fn iter_jobs(&self) -> impl Iterator<Item = RenderConfig> + '_ {
+        self.inputs.iter().flat_map(move |input| {
+            self.views.iter().map(move |&view| {
+                let output = self.compute_output_path(input, view);
+                let metadata_path = self.metadata_path.as_ref().map(|p| {
+                    if self.is_batch_mode() {
+                        self.compute_metadata_path(input, view)
+                    } else {
+                        p.clone()
+                    }
+                });
+
+                RenderConfig {
+                    input: input.clone(),
+                    output,
+                    width: self.width,
+                    height: self.height,
+                    view,
+                    padding: self.padding,
+                    aa: self.aa,
+                    background: self.background,
+                    background_color: self.background_color,
+                    material_color: self.material_color,
+                    lighting: self.lighting,
+                    metadata_path,
+                    quiet: self.quiet,
+                    verbose: self.verbose,
+                }
+            })
+        })
+    }
+
+    fn compute_output_path(&self, input: &Path, view: ViewConfig) -> PathBuf {
+        if let Some(ref dir) = self.output_dir {
+            let stem = input.file_stem().unwrap_or_default().to_string_lossy();
+            if self.views.len() > 1 {
+                let view_name = view_config_name(view);
+                dir.join(format!("{}.{}.png", stem, view_name))
+            } else {
+                dir.join(format!("{}.png", stem))
+            }
+        } else {
+            self.output_file.clone().unwrap_or_else(|| PathBuf::from("output.png"))
+        }
+    }
+
+    fn compute_metadata_path(&self, input: &Path, view: ViewConfig) -> PathBuf {
+        if let Some(ref dir) = self.output_dir {
+            let stem = input.file_stem().unwrap_or_default().to_string_lossy();
+            if self.views.len() > 1 {
+                let view_name = view_config_name(view);
+                dir.join(format!("{}.{}.json", stem, view_name))
+            } else {
+                dir.join(format!("{}.json", stem))
+            }
+        } else {
+            self.metadata_path.clone().unwrap_or_else(|| PathBuf::from("metadata.json"))
+        }
+    }
+}
+
+fn view_config_name(view: ViewConfig) -> String {
+    match view {
+        ViewConfig::Preset(preset) => view_preset_name(preset).to_string(),
+        ViewConfig::Custom { azimuth, elevation } => format!("custom_{}_{}", azimuth as i32, elevation as i32),
+    }
+}
+
+fn view_preset_name(preset: ViewPreset) -> &'static str {
+    match preset {
+        ViewPreset::Front => "front",
+        ViewPreset::Back => "back",
+        ViewPreset::Left => "left",
+        ViewPreset::Right => "right",
+        ViewPreset::Top => "top",
+        ViewPreset::Bottom => "bottom",
+        ViewPreset::Iso => "iso",
+        ViewPreset::Print => "print",
+    }
+}
+
+pub fn parse_args() -> Result<BatchConfig, RenderError> {
+    let args = Args::parse();
+    build_batch_config(args).map_err(|e| RenderError::Config(e.to_string()))
+}
+
+fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
+    let has_custom_angles = args.azimuth.is_some() || args.elevation.is_some();
+    let has_views_flag = args.views.is_some();
+    let has_explicit_view = args.view != "iso";
+    let is_stdin = args.inputs.len() == 1 && args.inputs[0].to_str() == Some("-");
+    let is_stdout = args.output.to_str() == Some("-");
+
+    // Validate conflicting options
+    if has_custom_angles && has_views_flag {
+        return Err(CliError::ConflictingViewsArgs);
+    }
+    if has_custom_angles && has_explicit_view {
+        return Err(CliError::ConflictingViewArgs);
+    }
+    if has_views_flag && has_explicit_view {
+        return Err(CliError::ConflictingViewFlags);
+    }
+
+    // Parse views
+    let views: Vec<ViewConfig> = if has_custom_angles {
+        match (args.azimuth, args.elevation) {
+            (Some(az), Some(el)) => {
+                vec![ViewConfig::Custom { azimuth: az, elevation: el }]
+            }
+            _ => return Err(CliError::IncompleteCustomView),
+        }
+    } else if let Some(ref views_str) = args.views {
+        parse_views_list(views_str).into_iter().map(ViewConfig::Preset).collect()
+    } else {
+        vec![ViewConfig::Preset(parse_view_preset(&args.view))]
+    };
+
+    let is_batch = args.inputs.len() > 1 || views.len() > 1;
+
+    // Validate stdin/stdout with batch mode
+    if is_stdin && is_batch {
+        return Err(CliError::StdinWithBatch);
+    }
+    if is_stdout && is_batch {
+        return Err(CliError::StdoutWithBatch);
+    }
+
+    // Determine output mode (file vs directory)
+    let (output_dir, output_file) = if is_stdout {
+        (None, Some(args.output.clone()))
+    } else if is_batch {
+        let path = &args.output;
+        let is_dir = path.to_str().map(|s| s.ends_with('/')).unwrap_or(false)
+            || path.is_dir();
+        if !is_dir {
+            return Err(CliError::MultipleInputsRequireDirectory);
+        }
+        (Some(path.clone()), None)
+    } else {
+        (None, Some(args.output.clone()))
+    };
+
     let aa = parse_aa(&args.aa);
     let background = parse_background(&args.background);
     let background_color = parse_hex_color(&args.background_color);
     let material_color = parse_hex_color(&args.material_color);
     let lighting = parse_lighting(&args.lighting);
 
-    Ok(RenderConfig {
-        input: args.input,
-        output: args.output,
+    Ok(BatchConfig {
+        inputs: args.inputs,
+        output_dir,
+        output_file,
+        views,
         width: args.width,
         height: args.height,
-        view,
         padding: args.padding,
         aa,
         background,
@@ -168,33 +354,27 @@ fn build_config(args: Args) -> Result<RenderConfig, CliError> {
         metadata_path: args.metadata,
         quiet: args.quiet,
         verbose: args.verbose,
+        strict: args.strict,
     })
 }
 
-fn parse_view(args: &Args) -> Result<ViewConfig, CliError> {
-    let has_custom = args.azimuth.is_some() || args.elevation.is_some();
+fn parse_views_list(s: &str) -> Vec<ViewPreset> {
+    s.split(',')
+        .map(|v| parse_view_preset(v.trim()))
+        .collect()
+}
 
-    if has_custom {
-        match (args.azimuth, args.elevation) {
-            (Some(az), Some(el)) => Ok(ViewConfig::Custom {
-                azimuth: az,
-                elevation: el,
-            }),
-            _ => Err(CliError::IncompleteCustomView),
-        }
-    } else {
-        let preset = match args.view.to_lowercase().as_str() {
-            "front" => ViewPreset::Front,
-            "back" => ViewPreset::Back,
-            "left" => ViewPreset::Left,
-            "right" => ViewPreset::Right,
-            "top" => ViewPreset::Top,
-            "bottom" => ViewPreset::Bottom,
-            "iso" | "isometric" => ViewPreset::Iso,
-            "print" | "bed" => ViewPreset::Print,
-            _ => ViewPreset::Iso,
-        };
-        Ok(ViewConfig::Preset(preset))
+fn parse_view_preset(s: &str) -> ViewPreset {
+    match s.to_lowercase().as_str() {
+        "front" => ViewPreset::Front,
+        "back" => ViewPreset::Back,
+        "left" => ViewPreset::Left,
+        "right" => ViewPreset::Right,
+        "top" => ViewPreset::Top,
+        "bottom" => ViewPreset::Bottom,
+        "iso" | "isometric" => ViewPreset::Iso,
+        "print" | "bed" => ViewPreset::Print,
+        _ => ViewPreset::Iso,
     }
 }
 
@@ -246,7 +426,7 @@ mod tests {
     #[test]
     fn test_parse_minimal_args() {
         let args = make_args(&["stl-render", "input.stl", "-o", "out.png"]);
-        assert_eq!(args.input, PathBuf::from("input.stl"));
+        assert_eq!(args.inputs, vec![PathBuf::from("input.stl")]);
         assert_eq!(args.output, PathBuf::from("out.png"));
         assert_eq!(args.width, 512);
         assert_eq!(args.height, 512);
@@ -280,31 +460,31 @@ mod tests {
     }
 
     #[test]
-    fn test_build_config_minimal() {
+    fn test_build_batch_config_minimal() {
         let args = make_args(&["stl-render", "test.stl", "-o", "out.png"]);
-        let config = build_config(args).unwrap();
-        assert_eq!(config.input, PathBuf::from("test.stl"));
-        assert_eq!(config.output, PathBuf::from("out.png"));
-        assert_eq!(config.view, ViewConfig::Preset(ViewPreset::Iso));
+        let config = build_batch_config(args).unwrap();
+        assert_eq!(config.inputs, vec![PathBuf::from("test.stl")]);
+        assert_eq!(config.output_file, Some(PathBuf::from("out.png")));
+        assert_eq!(config.views, vec![ViewConfig::Preset(ViewPreset::Iso)]);
     }
 
     #[test]
-    fn test_build_config_custom_view() {
+    fn test_build_batch_config_custom_view() {
         let args = make_args(&[
             "stl-render", "test.stl", "-o", "out.png",
             "--azimuth", "45", "--elevation", "30",
         ]);
-        let config = build_config(args).unwrap();
-        assert_eq!(config.view, ViewConfig::Custom { azimuth: 45.0, elevation: 30.0 });
+        let config = build_batch_config(args).unwrap();
+        assert_eq!(config.views, vec![ViewConfig::Custom { azimuth: 45.0, elevation: 30.0 }]);
     }
 
     #[test]
-    fn test_build_config_incomplete_custom_view() {
+    fn test_build_batch_config_incomplete_custom_view() {
         let args = make_args(&[
             "stl-render", "test.stl", "-o", "out.png",
             "--azimuth", "45",
         ]);
-        let result = build_config(args);
+        let result = build_batch_config(args);
         assert!(matches!(result, Err(CliError::IncompleteCustomView)));
     }
 
@@ -343,8 +523,48 @@ mod tests {
             ("bed", ViewPreset::Print),
         ] {
             let args = make_args(&["stl-render", "t.stl", "-o", "o.png", "--view", name]);
-            let config = build_config(args).unwrap();
-            assert_eq!(config.view, ViewConfig::Preset(expected));
+            let config = build_batch_config(args).unwrap();
+            assert_eq!(config.views, vec![ViewConfig::Preset(expected)]);
         }
+    }
+
+    #[test]
+    fn test_parse_views_list() {
+        let args = make_args(&["stl-render", "t.stl", "-o", "out/", "--views", "front,back,iso"]);
+        let config = build_batch_config(args).unwrap();
+        assert_eq!(config.views, vec![
+            ViewConfig::Preset(ViewPreset::Front),
+            ViewConfig::Preset(ViewPreset::Back),
+            ViewConfig::Preset(ViewPreset::Iso),
+        ]);
+    }
+
+    #[test]
+    fn test_batch_mode_requires_directory() {
+        let args = make_args(&["stl-render", "a.stl", "b.stl", "-o", "out.png"]);
+        let result = build_batch_config(args);
+        assert!(matches!(result, Err(CliError::MultipleInputsRequireDirectory)));
+    }
+
+    #[test]
+    fn test_multiple_views_requires_directory() {
+        let args = make_args(&["stl-render", "t.stl", "-o", "out.png", "--views", "front,back"]);
+        let result = build_batch_config(args);
+        assert!(matches!(result, Err(CliError::MultipleInputsRequireDirectory)));
+    }
+
+    #[test]
+    fn test_batch_mode_with_directory() {
+        let args = make_args(&["stl-render", "a.stl", "b.stl", "-o", "output/"]);
+        let config = build_batch_config(args).unwrap();
+        assert_eq!(config.inputs.len(), 2);
+        assert_eq!(config.output_dir, Some(PathBuf::from("output/")));
+    }
+
+    #[test]
+    fn test_strict_flag() {
+        let args = make_args(&["stl-render", "t.stl", "-o", "out.png", "--strict"]);
+        let config = build_batch_config(args).unwrap();
+        assert!(config.strict);
     }
 }

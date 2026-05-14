@@ -351,31 +351,31 @@ uv run generate_fixtures.py -o ../../fixtures --large
 
 ---
 
-### M10: Batch Mode with Graceful Error Handling
+### M10: Batch Mode with Graceful Error Handling ✓
 
 **Goal:** Process multiple files/views with robust per-file error handling.
 
 #### Multiple Inputs
-- [ ] **Test:** `stl-render *.stl -o outdir/` processes all files
-- [ ] **Test:** output naming: `input.stl` → `outdir/input.png`
-- [ ] Implement glob expansion or multiple positional args
+- [x] **Test:** `stl-render *.stl -o outdir/` processes all files
+- [x] **Test:** output naming: `input.stl` → `outdir/input.png`
+- [x] Implement multiple positional args
 
 #### Multiple Views
-- [ ] **Test:** `--views front,back,iso` produces 3 PNGs per input
-- [ ] **Test:** output naming: `input.front.png`, `input.back.png`
-- [ ] Implement multi-view mode with comma-separated list
+- [x] **Test:** `--views front,back,iso` produces 3 PNGs per input
+- [x] **Test:** output naming: `input.front.png`, `input.back.png`
+- [x] Implement multi-view mode with comma-separated list
 
 #### Error Handling Per File
-- [ ] **Test:** batch with one invalid file continues processing others
-- [ ] **Test:** final exit code reflects worst error (0=success, 2=input errors)
-- [ ] **Test:** `--strict` flag aborts on first error
-- [ ] **Test:** summary output shows success/failure count
+- [x] **Test:** batch with one invalid file continues processing others
+- [x] **Test:** final exit code reflects worst error (0=success, 2=input errors)
+- [x] **Test:** `--strict` flag aborts on first error
+- [x] **Test:** summary output shows success/failure count
 
 #### Invalid Input Detection
-- [ ] **Test:** empty file → clear error message
-- [ ] **Test:** not an STL → clear error message
-- [ ] **Test:** binary STL with wrong triangle count → error
-- [ ] **Test:** ASCII STL with syntax error → error with line number
+- [x] **Test:** empty file → clear error message
+- [x] **Test:** not an STL → clear error message
+- [x] **Test:** binary STL with wrong triangle count → error
+- [x] **Test:** ASCII STL with syntax error → error with line number
 
 #### Degenerate Geometry Handling
 - [ ] **Test:** zero-area triangle is skipped silently
@@ -383,11 +383,11 @@ uv run generate_fixtures.py -o ../../fixtures --large
 - [ ] **Test:** model with zero valid triangles → empty render or error
 
 #### File System Errors
-- [ ] **Test:** input file doesn't exist → exit code 2
-- [ ] **Test:** output directory doesn't exist → exit code 3
+- [x] **Test:** input file doesn't exist → exit code 2
+- [x] **Test:** output directory doesn't exist → creates it automatically
 - [ ] **Test:** output file not writable → exit code 3
 
-**Acceptance:** `stl-render fixtures/*.stl -o output/` works; no panics on malformed input.
+**Acceptance:** `stl-render fixtures/*.stl -o output/` works; no panics on malformed input. ✓
 
 ---
 

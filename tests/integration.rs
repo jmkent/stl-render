@@ -480,3 +480,169 @@ fn test_verbose_shows_triangle_count() {
         stderr
     );
 }
+
+// Batch mode tests
+
+#[test]
+fn test_batch_multiple_inputs_to_directory() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/sphere.stl",
+            "-o", &format!("{}/", outdir.display()),
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(outdir.join("cube.png").exists(), "cube.png should exist");
+    assert!(outdir.join("sphere.png").exists(), "sphere.png should exist");
+}
+
+#[test]
+fn test_batch_multiple_views() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", &format!("{}/", outdir.display()),
+            "--views", "front,back,iso",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(outdir.join("cube.front.png").exists(), "cube.front.png should exist");
+    assert!(outdir.join("cube.back.png").exists(), "cube.back.png should exist");
+    assert!(outdir.join("cube.iso.png").exists(), "cube.iso.png should exist");
+}
+
+#[test]
+fn test_batch_multiple_inputs_multiple_views() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/sphere.stl",
+            "-o", &format!("{}/", outdir.display()),
+            "--views", "front,iso",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(outdir.join("cube.front.png").exists());
+    assert!(outdir.join("cube.iso.png").exists());
+    assert!(outdir.join("sphere.front.png").exists());
+    assert!(outdir.join("sphere.iso.png").exists());
+}
+
+#[test]
+fn test_batch_continues_on_error() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let output = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/nonexistent.stl",
+            "fixtures/sphere.stl",
+            "-o", &format!("{}/", outdir.display()),
+        ])
+        .output()
+        .unwrap();
+
+    // Should fail overall due to nonexistent file
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+
+    // But valid files should still be rendered
+    assert!(outdir.join("cube.png").exists(), "cube.png should still be rendered");
+    assert!(outdir.join("sphere.png").exists(), "sphere.png should still be rendered");
+}
+
+#[test]
+fn test_batch_strict_aborts_on_first_error() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let output = stl_render()
+        .args([
+            "fixtures/nonexistent.stl",
+            "fixtures/cube.stl",
+            "-o", &format!("{}/", outdir.display()),
+            "--strict",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    // With strict mode, cube.stl should NOT be rendered after the error
+    assert!(!outdir.join("cube.png").exists(), "cube.png should not exist with --strict");
+}
+
+#[test]
+fn test_batch_summary_output() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let output = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/sphere.stl",
+            "-o", &format!("{}/", outdir.display()),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("2 file(s)"),
+        "Should show summary: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_batch_requires_directory_for_multiple_inputs() {
+    let output = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/sphere.stl",
+            "-o", "output.png",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1)); // Config error
+}
+
+#[test]
+fn test_batch_requires_directory_for_multiple_views() {
+    let output = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", "output.png",
+            "--views", "front,back",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1)); // Config error
+}

@@ -5,9 +5,9 @@ pub mod output;
 pub mod render;
 pub mod stl;
 
-pub use cli::RenderConfig;
+pub use cli::{BatchConfig, RenderConfig};
 pub use mesh::BoundingBox;
-pub use output::RenderMetadata;
+pub use output::{OutputError, RenderMetadata};
 pub use stl::{StlError, StlReader, Triangle};
 
 use thiserror::Error;
