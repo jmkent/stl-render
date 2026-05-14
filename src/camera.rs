@@ -291,8 +291,12 @@ mod tests {
 
         // Camera at +Z looking toward -Z
         // Point at +Z is nearer to camera, point at -Z is farther
-        let near_point = camera.view_matrix.transform_point3(Vec3::new(0.0, 0.0, 1.0));
-        let far_point = camera.view_matrix.transform_point3(Vec3::new(0.0, 0.0, -1.0));
+        let near_point = camera
+            .view_matrix
+            .transform_point3(Vec3::new(0.0, 0.0, 1.0));
+        let far_point = camera
+            .view_matrix
+            .transform_point3(Vec3::new(0.0, 0.0, -1.0));
 
         // Farther point has more negative Z in view space
         assert!(far_point.z < near_point.z);
@@ -397,7 +401,11 @@ mod tests {
         }
 
         // With no padding, corners should reach close to edge
-        assert!(max_extent > 0.9, "Model should fill viewport: {}", max_extent);
+        assert!(
+            max_extent > 0.9,
+            "Model should fill viewport: {}",
+            max_extent
+        );
     }
 
     #[test]

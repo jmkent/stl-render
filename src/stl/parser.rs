@@ -23,9 +23,7 @@ pub fn detect_format(data: &[u8]) -> StlFormat {
         // Look for "facet" keyword in first ~1000 bytes
         let search_range = std::cmp::min(data.len(), 1000);
         if let Some(slice) = data.get(..search_range)
-            && slice
-                .windows(5)
-                .any(|w| w.eq_ignore_ascii_case(b"facet"))
+            && slice.windows(5).any(|w| w.eq_ignore_ascii_case(b"facet"))
         {
             return StlFormat::Ascii;
         }

@@ -28,6 +28,21 @@ pub enum CliError {
 
     #[error("stdout output (-) cannot be used with multiple inputs or views")]
     StdoutWithBatch,
+
+    #[error("invalid view '{0}'")]
+    InvalidView(String),
+
+    #[error("invalid anti-aliasing level '{0}' (expected none, 2x, or 4x)")]
+    InvalidAntiAliasing(String),
+
+    #[error("invalid background '{0}' (expected transparent or solid)")]
+    InvalidBackground(String),
+
+    #[error("invalid lighting preset '{0}' (expected flat, studio, or technical)")]
+    InvalidLighting(String),
+
+    #[error("invalid color '{0}' (expected 6-digit hex color, for example #cccccc)")]
+    InvalidColor(String),
 }
 
 #[derive(Debug, Clone, Parser)]
@@ -236,7 +251,9 @@ impl BatchConfig {
                 dir.join(format!("{}.png", stem))
             }
         } else {
-            self.output_file.clone().unwrap_or_else(|| PathBuf::from("output.png"))
+            self.output_file
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("output.png"))
         }
     }
 
@@ -250,7 +267,9 @@ impl BatchConfig {
                 dir.join(format!("{}.json", stem))
             }
         } else {
-            self.metadata_path.clone().unwrap_or_else(|| PathBuf::from("metadata.json"))
+            self.metadata_path
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("metadata.json"))
         }
     }
 }
@@ -258,7 +277,9 @@ impl BatchConfig {
 fn view_config_name(view: ViewConfig) -> String {
     match view {
         ViewConfig::Preset(preset) => view_preset_name(preset).to_string(),
-        ViewConfig::Custom { azimuth, elevation } => format!("custom_{}_{}", azimuth as i32, elevation as i32),
+        ViewConfig::Custom { azimuth, elevation } => {
+            format!("custom_{}_{}", azimuth as i32, elevation as i32)
+        }
     }
 }
 
@@ -307,14 +328,20 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
     let views: Vec<ViewConfig> = if has_custom_angles {
         match (args.azimuth, args.elevation) {
             (Some(az), Some(el)) => {
-                vec![ViewConfig::Custom { azimuth: az, elevation: el }]
+                vec![ViewConfig::Custom {
+                    azimuth: az,
+                    elevation: el,
+                }]
             }
             _ => return Err(CliError::IncompleteCustomView),
         }
     } else if let Some(ref views_str) = args.views {
-        parse_views_list(views_str).into_iter().map(ViewConfig::Preset).collect()
+        parse_views_list(views_str)?
+            .into_iter()
+            .map(ViewConfig::Preset)
+            .collect()
     } else {
-        vec![ViewConfig::Preset(parse_view_preset(&args.view))]
+        vec![ViewConfig::Preset(parse_view_preset(&args.view)?)]
     };
 
     let is_batch = args.inputs.len() > 1 || views.len() > 1;
@@ -332,8 +359,7 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         (None, Some(args.output.clone()))
     } else if is_batch {
         let path = &args.output;
-        let is_dir = path.to_str().map(|s| s.ends_with('/')).unwrap_or(false)
-            || path.is_dir();
+        let is_dir = path.to_str().map(|s| s.ends_with('/')).unwrap_or(false) || path.is_dir();
         if !is_dir {
             return Err(CliError::MultipleInputsRequireDirectory);
         }
@@ -342,11 +368,11 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         (None, Some(args.output.clone()))
     };
 
-    let aa = parse_aa(&args.aa);
-    let background = parse_background(&args.background);
-    let background_color = parse_hex_color(&args.background_color);
-    let material_color = parse_hex_color(&args.material_color);
-    let lighting = parse_lighting(&args.lighting);
+    let aa = parse_aa(&args.aa)?;
+    let background = parse_background(&args.background)?;
+    let background_color = parse_hex_color(&args.background_color)?;
+    let material_color = parse_hex_color(&args.material_color)?;
+    let lighting = parse_lighting(&args.lighting)?;
 
     Ok(BatchConfig {
         inputs: args.inputs,
@@ -368,14 +394,12 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
     })
 }
 
-fn parse_views_list(s: &str) -> Vec<ViewPreset> {
-    s.split(',')
-        .map(|v| parse_view_preset(v.trim()))
-        .collect()
+fn parse_views_list(s: &str) -> Result<Vec<ViewPreset>, CliError> {
+    s.split(',').map(|v| parse_view_preset(v.trim())).collect()
 }
 
-fn parse_view_preset(s: &str) -> ViewPreset {
-    match s.to_lowercase().as_str() {
+fn parse_view_preset(s: &str) -> Result<ViewPreset, CliError> {
+    let preset = match s.to_lowercase().as_str() {
         "front" => ViewPreset::Front,
         "back" => ViewPreset::Back,
         "left" => ViewPreset::Left,
@@ -389,45 +413,52 @@ fn parse_view_preset(s: &str) -> ViewPreset {
         "print-right" | "printright" => ViewPreset::PrintRight,
         "print-back" | "printback" => ViewPreset::PrintBack,
         "print-grid" | "printgrid" => ViewPreset::PrintGrid,
-        _ => ViewPreset::Iso,
-    }
+        _ => return Err(CliError::InvalidView(s.to_string())),
+    };
+    Ok(preset)
 }
 
-fn parse_aa(s: &str) -> AntiAliasing {
-    match s.to_lowercase().as_str() {
+fn parse_aa(s: &str) -> Result<AntiAliasing, CliError> {
+    let aa = match s.to_lowercase().as_str() {
         "none" | "1x" => AntiAliasing::None,
+        "2x" => AntiAliasing::X2,
         "4x" => AntiAliasing::X4,
-        _ => AntiAliasing::X2,
-    }
+        _ => return Err(CliError::InvalidAntiAliasing(s.to_string())),
+    };
+    Ok(aa)
 }
 
-fn parse_background(s: &str) -> Background {
-    match s.to_lowercase().as_str() {
+fn parse_background(s: &str) -> Result<Background, CliError> {
+    let background = match s.to_lowercase().as_str() {
+        "transparent" => Background::Transparent,
         "solid" => Background::Solid,
-        _ => Background::Transparent,
-    }
+        _ => return Err(CliError::InvalidBackground(s.to_string())),
+    };
+    Ok(background)
 }
 
-fn parse_lighting(s: &str) -> LightingPreset {
-    match s.to_lowercase().as_str() {
+fn parse_lighting(s: &str) -> Result<LightingPreset, CliError> {
+    let lighting = match s.to_lowercase().as_str() {
         "flat" => LightingPreset::Flat,
+        "studio" => LightingPreset::Studio,
         "technical" => LightingPreset::Technical,
-        _ => LightingPreset::Studio,
-    }
+        _ => return Err(CliError::InvalidLighting(s.to_string())),
+    };
+    Ok(lighting)
 }
 
-fn parse_hex_color(s: &str) -> [u8; 3] {
-    let s = s.trim_start_matches('#');
-    if s.len() == 6
+fn parse_hex_color(s: &str) -> Result<[u8; 3], CliError> {
+    let hex = s.trim_start_matches('#');
+    if hex.len() == 6
         && let (Ok(r), Ok(g), Ok(b)) = (
-            u8::from_str_radix(&s[0..2], 16),
-            u8::from_str_radix(&s[2..4], 16),
-            u8::from_str_radix(&s[4..6], 16),
+            u8::from_str_radix(&hex[0..2], 16),
+            u8::from_str_radix(&hex[2..4], 16),
+            u8::from_str_radix(&hex[4..6], 16),
         )
     {
-        return [r, g, b];
+        return Ok([r, g, b]);
     }
-    [204, 204, 204] // default gray
+    Err(CliError::InvalidColor(s.to_string()))
 }
 
 #[cfg(test)]
@@ -452,17 +483,28 @@ mod tests {
         let args = make_args(&[
             "stl-render",
             "model.stl",
-            "-o", "render.png",
-            "--width", "1024",
-            "--height", "768",
-            "--view", "front",
-            "--padding", "0.1",
-            "--aa", "4x",
-            "--background", "solid",
-            "--background-color", "#ff0000",
-            "--material-color", "#00ff00",
-            "--lighting", "flat",
-            "--metadata", "meta.json",
+            "-o",
+            "render.png",
+            "--width",
+            "1024",
+            "--height",
+            "768",
+            "--view",
+            "front",
+            "--padding",
+            "0.1",
+            "--aa",
+            "4x",
+            "--background",
+            "solid",
+            "--background-color",
+            "#ff0000",
+            "--material-color",
+            "#00ff00",
+            "--lighting",
+            "flat",
+            "--metadata",
+            "meta.json",
             "--quiet",
         ]);
         assert_eq!(args.width, 1024);
@@ -486,42 +528,65 @@ mod tests {
     #[test]
     fn test_build_batch_config_custom_view() {
         let args = make_args(&[
-            "stl-render", "test.stl", "-o", "out.png",
-            "--azimuth", "45", "--elevation", "30",
+            "stl-render",
+            "test.stl",
+            "-o",
+            "out.png",
+            "--azimuth",
+            "45",
+            "--elevation",
+            "30",
         ]);
         let config = build_batch_config(args).unwrap();
-        assert_eq!(config.views, vec![ViewConfig::Custom { azimuth: 45.0, elevation: 30.0 }]);
+        assert_eq!(
+            config.views,
+            vec![ViewConfig::Custom {
+                azimuth: 45.0,
+                elevation: 30.0
+            }]
+        );
     }
 
     #[test]
     fn test_build_batch_config_incomplete_custom_view() {
-        let args = make_args(&[
-            "stl-render", "test.stl", "-o", "out.png",
-            "--azimuth", "45",
-        ]);
+        let args = make_args(&["stl-render", "test.stl", "-o", "out.png", "--azimuth", "45"]);
         let result = build_batch_config(args);
         assert!(matches!(result, Err(CliError::IncompleteCustomView)));
     }
 
     #[test]
     fn test_parse_hex_color() {
-        assert_eq!(parse_hex_color("#ff0000"), [255, 0, 0]);
-        assert_eq!(parse_hex_color("00ff00"), [0, 255, 0]);
-        assert_eq!(parse_hex_color("#0000FF"), [0, 0, 255]);
-        assert_eq!(parse_hex_color("invalid"), [204, 204, 204]);
+        assert_eq!(parse_hex_color("#ff0000").unwrap(), [255, 0, 0]);
+        assert_eq!(parse_hex_color("00ff00").unwrap(), [0, 255, 0]);
+        assert_eq!(parse_hex_color("#0000FF").unwrap(), [0, 0, 255]);
+        assert!(matches!(
+            parse_hex_color("invalid"),
+            Err(CliError::InvalidColor(_))
+        ));
     }
 
     #[test]
     fn test_parse_aa() {
-        assert_eq!(parse_aa("none"), AntiAliasing::None);
-        assert_eq!(parse_aa("2x"), AntiAliasing::X2);
-        assert_eq!(parse_aa("4x"), AntiAliasing::X4);
+        assert_eq!(parse_aa("none").unwrap(), AntiAliasing::None);
+        assert_eq!(parse_aa("2x").unwrap(), AntiAliasing::X2);
+        assert_eq!(parse_aa("4x").unwrap(), AntiAliasing::X4);
+        assert!(matches!(
+            parse_aa("8x"),
+            Err(CliError::InvalidAntiAliasing(_))
+        ));
     }
 
     #[test]
     fn test_parse_background() {
-        assert_eq!(parse_background("transparent"), Background::Transparent);
-        assert_eq!(parse_background("solid"), Background::Solid);
+        assert_eq!(
+            parse_background("transparent").unwrap(),
+            Background::Transparent
+        );
+        assert_eq!(parse_background("solid").unwrap(), Background::Solid);
+        assert!(matches!(
+            parse_background("gradient"),
+            Err(CliError::InvalidBackground(_))
+        ));
     }
 
     #[test]
@@ -541,31 +606,66 @@ mod tests {
             let config = build_batch_config(args).unwrap();
             assert_eq!(config.views, vec![ViewConfig::Preset(expected)]);
         }
+
+        let args = make_args(&["stl-render", "t.stl", "-o", "o.png", "--view", "nope"]);
+        assert!(matches!(
+            build_batch_config(args),
+            Err(CliError::InvalidView(_))
+        ));
     }
 
     #[test]
     fn test_parse_views_list() {
-        let args = make_args(&["stl-render", "t.stl", "-o", "out/", "--views", "front,back,iso"]);
-        let config = build_batch_config(args).unwrap();
-        assert_eq!(config.views, vec![
-            ViewConfig::Preset(ViewPreset::Front),
-            ViewConfig::Preset(ViewPreset::Back),
-            ViewConfig::Preset(ViewPreset::Iso),
+        let args = make_args(&[
+            "stl-render",
+            "t.stl",
+            "-o",
+            "out/",
+            "--views",
+            "front,back,iso",
         ]);
+        let config = build_batch_config(args).unwrap();
+        assert_eq!(
+            config.views,
+            vec![
+                ViewConfig::Preset(ViewPreset::Front),
+                ViewConfig::Preset(ViewPreset::Back),
+                ViewConfig::Preset(ViewPreset::Iso),
+            ]
+        );
+
+        let args = make_args(&["stl-render", "t.stl", "-o", "out/", "--views", "front,nope"]);
+        assert!(matches!(
+            build_batch_config(args),
+            Err(CliError::InvalidView(_))
+        ));
     }
 
     #[test]
     fn test_batch_mode_requires_directory() {
         let args = make_args(&["stl-render", "a.stl", "b.stl", "-o", "out.png"]);
         let result = build_batch_config(args);
-        assert!(matches!(result, Err(CliError::MultipleInputsRequireDirectory)));
+        assert!(matches!(
+            result,
+            Err(CliError::MultipleInputsRequireDirectory)
+        ));
     }
 
     #[test]
     fn test_multiple_views_requires_directory() {
-        let args = make_args(&["stl-render", "t.stl", "-o", "out.png", "--views", "front,back"]);
+        let args = make_args(&[
+            "stl-render",
+            "t.stl",
+            "-o",
+            "out.png",
+            "--views",
+            "front,back",
+        ]);
         let result = build_batch_config(args);
-        assert!(matches!(result, Err(CliError::MultipleInputsRequireDirectory)));
+        assert!(matches!(
+            result,
+            Err(CliError::MultipleInputsRequireDirectory)
+        ));
     }
 
     #[test]

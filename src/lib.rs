@@ -42,21 +42,8 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
         return render_print_grid(config);
     }
 
-    // Verify input file exists
-    if config.input.to_str() != Some("-") && !config.input.exists() {
-        return Err(RenderError::Stl(StlError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("input file not found: {}", config.input.display()),
-        ))));
-    }
-
     // Parse STL and compute bounds (first pass)
-    let is_stdin = config.input.to_str() == Some("-");
-    let reader = if is_stdin {
-        StlReader::from_reader(std::io::stdin())?
-    } else {
-        StlReader::open(&config.input)?
-    };
+    let reader = open_stl_reader(config)?;
     let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
     validate_renderable_geometry(&bounds, triangle_count)?;
 
@@ -115,9 +102,14 @@ fn render_single_view(
         ViewConfig::Preset(preset) => {
             camera::Camera::from_preset(preset, bounds, render_width, render_height, config.padding)
         }
-        ViewConfig::Custom { azimuth, elevation } => {
-            camera::Camera::from_angles(azimuth, elevation, bounds, render_width, render_height, config.padding)
-        }
+        ViewConfig::Custom { azimuth, elevation } => camera::Camera::from_angles(
+            azimuth,
+            elevation,
+            bounds,
+            render_width,
+            render_height,
+            config.padding,
+        ),
     };
 
     // Create framebuffer
@@ -142,16 +134,8 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
     use cli::{ViewConfig, ViewPreset};
     use image::{GenericImage, RgbaImage};
 
-    // Verify input file exists
-    if config.input.to_str() != Some("-") && !config.input.exists() {
-        return Err(RenderError::Stl(StlError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("input file not found: {}", config.input.display()),
-        ))));
-    }
-
     // Parse STL and compute bounds
-    let reader = StlReader::open(&config.input)?;
+    let reader = open_stl_reader(config)?;
     let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
     validate_renderable_geometry(&bounds, triangle_count)?;
 
@@ -174,9 +158,9 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
     // | print-back    | print-left    |
     // +---------------+---------------+
     let views = [
-        (ViewPreset::PrintFront, 0, 0),           // top-left
-        (ViewPreset::PrintRight, quad_width, 0),  // top-right
-        (ViewPreset::PrintBack, 0, quad_height),  // bottom-left
+        (ViewPreset::PrintFront, 0, 0),                   // top-left
+        (ViewPreset::PrintRight, quad_width, 0),          // top-right
+        (ViewPreset::PrintBack, 0, quad_height),          // bottom-left
         (ViewPreset::PrintLeft, quad_width, quad_height), // bottom-right
     ];
 
@@ -219,7 +203,8 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
         let quad_image = render_single_view(&quad_config, &reader, &bounds)?;
 
         // Copy quadrant into composite
-        composite.copy_from(&quad_image, x_offset, y_offset)
+        composite
+            .copy_from(&quad_image, x_offset, y_offset)
             .map_err(|e| RenderError::Config(format!("failed to composite grid: {}", e)))?;
     }
 
@@ -246,7 +231,25 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
     Ok(metadata)
 }
 
-fn validate_renderable_geometry(bounds: &BoundingBox, triangle_count: u64) -> Result<(), RenderError> {
+fn open_stl_reader(config: &RenderConfig) -> Result<StlReader, RenderError> {
+    if config.input.to_str() == Some("-") {
+        return Ok(StlReader::from_reader(std::io::stdin())?);
+    }
+
+    if !config.input.exists() {
+        return Err(RenderError::Stl(StlError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("input file not found: {}", config.input.display()),
+        ))));
+    }
+
+    Ok(StlReader::open(&config.input)?)
+}
+
+fn validate_renderable_geometry(
+    bounds: &BoundingBox,
+    triangle_count: u64,
+) -> Result<(), RenderError> {
     if triangle_count == 0 || !bounds.is_valid() {
         return Err(RenderError::Stl(StlError::InvalidFormat(
             "STL contains no triangles".into(),

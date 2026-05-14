@@ -13,7 +13,10 @@ impl<'a> AsciiStlIter<'a> {
 
         // Verify starts with "solid"
         let trimmed = text.trim_start();
-        if !trimmed.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("solid")) {
+        if !trimmed
+            .get(..5)
+            .is_some_and(|s| s.eq_ignore_ascii_case("solid"))
+        {
             return Err(StlError::InvalidFormat("missing 'solid' keyword".into()));
         }
 
@@ -37,7 +40,9 @@ impl Iterator for AsciiStlIter<'_> {
 
         // End conditions
         if remaining.is_empty()
-            || remaining.get(..8).is_some_and(|s| s.eq_ignore_ascii_case("endsolid"))
+            || remaining
+                .get(..8)
+                .is_some_and(|s| s.eq_ignore_ascii_case("endsolid"))
         {
             return None;
         }
@@ -140,7 +145,10 @@ fn parse_keyword_xyz(line: &str, keywords: &[&str]) -> Result<[f32; 3], StlError
     parse_xyz(&mut parts, &context)
 }
 
-fn parse_xyz(parts: &mut std::str::SplitWhitespace<'_>, context: &str) -> Result<[f32; 3], StlError> {
+fn parse_xyz(
+    parts: &mut std::str::SplitWhitespace<'_>,
+    context: &str,
+) -> Result<[f32; 3], StlError> {
     let mut coords = [0.0f32; 3];
     for (i, axis) in ["x", "y", "z"].iter().enumerate() {
         coords[i] = parts
@@ -203,9 +211,7 @@ endsolid cube
 
     #[test]
     fn test_parse_multiple_triangles() {
-        let count = AsciiStlIter::new(TWO_TRIANGLES.as_bytes())
-            .unwrap()
-            .count();
+        let count = AsciiStlIter::new(TWO_TRIANGLES.as_bytes()).unwrap().count();
         assert_eq!(count, 2);
     }
 
@@ -232,7 +238,7 @@ endsolid test
 solid test
 facet normal 0 0 1
 outer loop
-vertex 1.5e-3 2.0E+2 -3.14e0
+vertex 1.5e-3 2.0E+2 -3.125e0
 vertex 1 0 0
 vertex 0 1 0
 endloop
@@ -248,7 +254,7 @@ endsolid test
         let v = tris[0].vertices[0];
         assert!((v[0] - 0.0015).abs() < 1e-6);
         assert!((v[1] - 200.0).abs() < 1e-6);
-        assert!((v[2] - (-3.14)).abs() < 1e-6);
+        assert!((v[2] - (-3.125)).abs() < 1e-6);
     }
 
     #[test]

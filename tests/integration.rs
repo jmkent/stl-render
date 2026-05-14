@@ -32,9 +32,12 @@ fn test_render_with_custom_size() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--width", "256",
-            "--height", "256",
+            "-o",
+            output.to_str().unwrap(),
+            "--width",
+            "256",
+            "--height",
+            "256",
         ])
         .status()
         .unwrap();
@@ -58,6 +61,100 @@ fn test_missing_input_file_exit_code() {
     assert_eq!(status.code(), Some(2)); // Input error
 }
 
+fn assert_invalid_args(args: &[&str], expected_message: &str) {
+    let output = stl_render().args(args).output().unwrap();
+
+    assert!(!output.status.success(), "Command should fail: {:?}", args);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "Invalid args should be usage/config errors: {:?}",
+        args
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(expected_message),
+        "stderr should contain {:?}: {}",
+        expected_message,
+        stderr
+    );
+}
+
+#[test]
+fn test_invalid_cli_values_exit_code_1() {
+    assert_invalid_args(
+        &[
+            "fixtures/cube.stl",
+            "-o",
+            "/tmp/invalid-view.png",
+            "--view",
+            "definitely-not-a-view",
+        ],
+        "invalid view",
+    );
+    assert_invalid_args(
+        &[
+            "fixtures/cube.stl",
+            "-o",
+            "/tmp/invalid-views/",
+            "--views",
+            "front,nope,iso",
+        ],
+        "invalid view",
+    );
+    assert_invalid_args(
+        &[
+            "fixtures/cube.stl",
+            "-o",
+            "/tmp/invalid-aa.png",
+            "--aa",
+            "nope",
+        ],
+        "invalid anti-aliasing",
+    );
+    assert_invalid_args(
+        &[
+            "fixtures/cube.stl",
+            "-o",
+            "/tmp/invalid-background.png",
+            "--background",
+            "gradient",
+        ],
+        "invalid background",
+    );
+    assert_invalid_args(
+        &[
+            "fixtures/cube.stl",
+            "-o",
+            "/tmp/invalid-lighting.png",
+            "--lighting",
+            "dramatic",
+        ],
+        "invalid lighting",
+    );
+    assert_invalid_args(
+        &[
+            "fixtures/cube.stl",
+            "-o",
+            "/tmp/invalid-material.png",
+            "--material-color",
+            "xyz",
+        ],
+        "invalid color",
+    );
+    assert_invalid_args(
+        &[
+            "fixtures/cube.stl",
+            "-o",
+            "/tmp/invalid-background-color.png",
+            "--background-color",
+            "xyz",
+        ],
+        "invalid color",
+    );
+}
+
 #[test]
 fn test_render_with_metadata() {
     let dir = tempdir().unwrap();
@@ -67,8 +164,10 @@ fn test_render_with_metadata() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--metadata", meta.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--metadata",
+            meta.to_str().unwrap(),
         ])
         .status()
         .unwrap();
@@ -110,10 +209,7 @@ fn test_render_sphere() {
 
 #[test]
 fn test_help_flag() {
-    let output = stl_render()
-        .arg("--help")
-        .output()
-        .unwrap();
+    let output = stl_render().arg("--help").output().unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -122,10 +218,7 @@ fn test_help_flag() {
 
 #[test]
 fn test_version_flag() {
-    let output = stl_render()
-        .arg("--version")
-        .output()
-        .unwrap();
+    let output = stl_render().arg("--version").output().unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -139,13 +232,25 @@ fn test_determinism() {
     let output2 = dir.path().join("render2.png");
 
     let status1 = stl_render()
-        .args(["fixtures/cube.stl", "-o", output1.to_str().unwrap(), "--aa", "none"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output1.to_str().unwrap(),
+            "--aa",
+            "none",
+        ])
         .status()
         .unwrap();
     assert!(status1.success());
 
     let status2 = stl_render()
-        .args(["fixtures/cube.stl", "-o", output2.to_str().unwrap(), "--aa", "none"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output2.to_str().unwrap(),
+            "--aa",
+            "none",
+        ])
         .status()
         .unwrap();
     assert!(status2.success());
@@ -164,8 +269,10 @@ fn test_render_produces_visible_content() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--background", "transparent",
+            "-o",
+            output.to_str().unwrap(),
+            "--background",
+            "transparent",
         ])
         .status()
         .unwrap();
@@ -190,9 +297,12 @@ fn test_material_color_red() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--material-color", "#ff0000",
-            "--background", "transparent",
+            "-o",
+            output.to_str().unwrap(),
+            "--material-color",
+            "#ff0000",
+            "--background",
+            "transparent",
         ])
         .status()
         .unwrap();
@@ -206,7 +316,12 @@ fn test_material_color_red() {
     let avg_r: u32 = visible.iter().map(|p| p[0] as u32).sum::<u32>() / visible.len() as u32;
     let avg_b: u32 = visible.iter().map(|p| p[2] as u32).sum::<u32>() / visible.len() as u32;
 
-    assert!(avg_r > avg_b * 2, "Red material should have more R than B: r={}, b={}", avg_r, avg_b);
+    assert!(
+        avg_r > avg_b * 2,
+        "Red material should have more R than B: r={}, b={}",
+        avg_r,
+        avg_b
+    );
 }
 
 #[test]
@@ -216,13 +331,20 @@ fn test_lighting_presets_differ() {
     let studio = dir.path().join("studio.png");
     let technical = dir.path().join("technical.png");
 
-    for (path, preset) in [(&flat, "flat"), (&studio, "studio"), (&technical, "technical")] {
+    for (path, preset) in [
+        (&flat, "flat"),
+        (&studio, "studio"),
+        (&technical, "technical"),
+    ] {
         let status = stl_render()
             .args([
                 "fixtures/cube.stl",
-                "-o", path.to_str().unwrap(),
-                "--lighting", preset,
-                "--aa", "none",
+                "-o",
+                path.to_str().unwrap(),
+                "--lighting",
+                preset,
+                "--aa",
+                "none",
             ])
             .status()
             .unwrap();
@@ -234,7 +356,10 @@ fn test_lighting_presets_differ() {
     let technical_data = std::fs::read(&technical).unwrap();
 
     assert_ne!(flat_data, studio_data, "Flat and studio should differ");
-    assert_ne!(studio_data, technical_data, "Studio and technical should differ");
+    assert_ne!(
+        studio_data, technical_data,
+        "Studio and technical should differ"
+    );
 }
 
 #[test]
@@ -245,10 +370,14 @@ fn test_aa_2x_output_dimensions() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--width", "256",
-            "--height", "256",
-            "--aa", "2x",
+            "-o",
+            output.to_str().unwrap(),
+            "--width",
+            "256",
+            "--height",
+            "256",
+            "--aa",
+            "2x",
         ])
         .status()
         .unwrap();
@@ -268,10 +397,14 @@ fn test_aa_4x_output_dimensions() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--width", "128",
-            "--height", "128",
-            "--aa", "4x",
+            "-o",
+            output.to_str().unwrap(),
+            "--width",
+            "128",
+            "--height",
+            "128",
+            "--aa",
+            "4x",
         ])
         .status()
         .unwrap();
@@ -290,19 +423,34 @@ fn test_aa_none_vs_2x_differ() {
     let aa2x = dir.path().join("aa2x.png");
 
     stl_render()
-        .args(["fixtures/cube.stl", "-o", none.to_str().unwrap(), "--aa", "none"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            none.to_str().unwrap(),
+            "--aa",
+            "none",
+        ])
         .status()
         .unwrap();
 
     stl_render()
-        .args(["fixtures/cube.stl", "-o", aa2x.to_str().unwrap(), "--aa", "2x"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            aa2x.to_str().unwrap(),
+            "--aa",
+            "2x",
+        ])
         .status()
         .unwrap();
 
     let none_data = std::fs::read(&none).unwrap();
     let aa2x_data = std::fs::read(&aa2x).unwrap();
 
-    assert_ne!(none_data, aa2x_data, "AA should produce different output than no AA");
+    assert_ne!(
+        none_data, aa2x_data,
+        "AA should produce different output than no AA"
+    );
 }
 
 #[test]
@@ -336,8 +484,10 @@ fn test_background_transparent_has_alpha() {
     stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--background", "transparent",
+            "-o",
+            output.to_str().unwrap(),
+            "--background",
+            "transparent",
         ])
         .status()
         .unwrap();
@@ -345,7 +495,10 @@ fn test_background_transparent_has_alpha() {
     let img = image::open(&output).unwrap().into_rgba8();
     let transparent_pixels: usize = img.pixels().filter(|p| p[3] == 0).count();
 
-    assert!(transparent_pixels > 1000, "Transparent background should have alpha=0 pixels");
+    assert!(
+        transparent_pixels > 1000,
+        "Transparent background should have alpha=0 pixels"
+    );
 }
 
 #[test]
@@ -356,9 +509,12 @@ fn test_background_solid_uses_color() {
     stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--background", "solid",
-            "--background-color", "#ff0000",
+            "-o",
+            output.to_str().unwrap(),
+            "--background",
+            "solid",
+            "--background-color",
+            "#ff0000",
         ])
         .status()
         .unwrap();
@@ -397,17 +553,25 @@ fn test_metadata_contains_required_fields() {
     stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--metadata", meta.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--metadata",
+            meta.to_str().unwrap(),
         ])
         .status()
         .unwrap();
 
     let content = std::fs::read_to_string(&meta).unwrap();
 
-    assert!(content.contains("\"triangle_count\""), "Should have triangle_count");
+    assert!(
+        content.contains("\"triangle_count\""),
+        "Should have triangle_count"
+    );
     assert!(content.contains("\"dimensions\""), "Should have dimensions");
-    assert!(content.contains("\"bounding_box\""), "Should have bounding_box");
+    assert!(
+        content.contains("\"bounding_box\""),
+        "Should have bounding_box"
+    );
     assert!(content.contains("\"input_file\""), "Should have input_file");
 }
 
@@ -426,8 +590,10 @@ fn test_large_file_renders_successfully() {
     let status = stl_render()
         .args([
             "fixtures/large_1m.stl",
-            "-o", output.to_str().unwrap(),
-            "--aa", "none",
+            "-o",
+            output.to_str().unwrap(),
+            "--aa",
+            "none",
         ])
         .status()
         .unwrap();
@@ -447,7 +613,11 @@ fn test_truncated_file_error() {
         .unwrap();
 
     assert!(!output.status.success(), "Truncated file should fail");
-    assert_eq!(output.status.code(), Some(2), "Should be input error (code 2)");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "Should be input error (code 2)"
+    );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -466,17 +636,26 @@ fn test_empty_stl_render_is_input_error() {
     let output = stl_render()
         .args([
             "fixtures/empty.stl",
-            "-o", output_path.to_str().unwrap(),
-            "--metadata", metadata_path.to_str().unwrap(),
+            "-o",
+            output_path.to_str().unwrap(),
+            "--metadata",
+            metadata_path.to_str().unwrap(),
             "--verbose",
         ])
         .output()
         .unwrap();
 
     assert!(!output.status.success(), "Empty STL should fail to render");
-    assert_eq!(output.status.code(), Some(2), "Should be input error (code 2)");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "Should be input error (code 2)"
+    );
     assert!(!output_path.exists(), "Empty STL should not write a PNG");
-    assert!(!metadata_path.exists(), "Empty STL should not write metadata");
+    assert!(
+        !metadata_path.exists(),
+        "Empty STL should not write metadata"
+    );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -499,7 +678,8 @@ fn test_verbose_shows_triangle_count() {
     let result = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
             "--verbose",
         ])
         .output()
@@ -527,14 +707,18 @@ fn test_batch_multiple_inputs_to_directory() {
         .args([
             "fixtures/cube.stl",
             "fixtures/sphere.stl",
-            "-o", &format!("{}/", outdir.display()),
+            "-o",
+            &format!("{}/", outdir.display()),
         ])
         .status()
         .unwrap();
 
     assert!(status.success());
     assert!(outdir.join("cube.png").exists(), "cube.png should exist");
-    assert!(outdir.join("sphere.png").exists(), "sphere.png should exist");
+    assert!(
+        outdir.join("sphere.png").exists(),
+        "sphere.png should exist"
+    );
 }
 
 #[test]
@@ -546,16 +730,27 @@ fn test_batch_multiple_views() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", &format!("{}/", outdir.display()),
-            "--views", "front,back,iso",
+            "-o",
+            &format!("{}/", outdir.display()),
+            "--views",
+            "front,back,iso",
         ])
         .status()
         .unwrap();
 
     assert!(status.success());
-    assert!(outdir.join("cube.front.png").exists(), "cube.front.png should exist");
-    assert!(outdir.join("cube.back.png").exists(), "cube.back.png should exist");
-    assert!(outdir.join("cube.iso.png").exists(), "cube.iso.png should exist");
+    assert!(
+        outdir.join("cube.front.png").exists(),
+        "cube.front.png should exist"
+    );
+    assert!(
+        outdir.join("cube.back.png").exists(),
+        "cube.back.png should exist"
+    );
+    assert!(
+        outdir.join("cube.iso.png").exists(),
+        "cube.iso.png should exist"
+    );
 }
 
 #[test]
@@ -568,8 +763,10 @@ fn test_batch_multiple_inputs_multiple_views() {
         .args([
             "fixtures/cube.stl",
             "fixtures/sphere.stl",
-            "-o", &format!("{}/", outdir.display()),
-            "--views", "front,iso",
+            "-o",
+            &format!("{}/", outdir.display()),
+            "--views",
+            "front,iso",
         ])
         .status()
         .unwrap();
@@ -592,7 +789,8 @@ fn test_batch_continues_on_error() {
             "fixtures/cube.stl",
             "fixtures/nonexistent.stl",
             "fixtures/sphere.stl",
-            "-o", &format!("{}/", outdir.display()),
+            "-o",
+            &format!("{}/", outdir.display()),
         ])
         .output()
         .unwrap();
@@ -602,8 +800,14 @@ fn test_batch_continues_on_error() {
     assert_eq!(output.status.code(), Some(2));
 
     // But valid files should still be rendered
-    assert!(outdir.join("cube.png").exists(), "cube.png should still be rendered");
-    assert!(outdir.join("sphere.png").exists(), "sphere.png should still be rendered");
+    assert!(
+        outdir.join("cube.png").exists(),
+        "cube.png should still be rendered"
+    );
+    assert!(
+        outdir.join("sphere.png").exists(),
+        "sphere.png should still be rendered"
+    );
 }
 
 #[test]
@@ -616,7 +820,8 @@ fn test_batch_strict_aborts_on_first_error() {
         .args([
             "fixtures/nonexistent.stl",
             "fixtures/cube.stl",
-            "-o", &format!("{}/", outdir.display()),
+            "-o",
+            &format!("{}/", outdir.display()),
             "--strict",
         ])
         .output()
@@ -624,7 +829,10 @@ fn test_batch_strict_aborts_on_first_error() {
 
     assert!(!output.status.success());
     // With strict mode, cube.stl should NOT be rendered after the error
-    assert!(!outdir.join("cube.png").exists(), "cube.png should not exist with --strict");
+    assert!(
+        !outdir.join("cube.png").exists(),
+        "cube.png should not exist with --strict"
+    );
 }
 
 #[test]
@@ -637,7 +845,8 @@ fn test_batch_summary_output() {
         .args([
             "fixtures/cube.stl",
             "fixtures/sphere.stl",
-            "-o", &format!("{}/", outdir.display()),
+            "-o",
+            &format!("{}/", outdir.display()),
         ])
         .output()
         .unwrap();
@@ -657,7 +866,8 @@ fn test_batch_requires_directory_for_multiple_inputs() {
         .args([
             "fixtures/cube.stl",
             "fixtures/sphere.stl",
-            "-o", "output.png",
+            "-o",
+            "output.png",
         ])
         .output()
         .unwrap();
@@ -671,8 +881,10 @@ fn test_batch_requires_directory_for_multiple_views() {
     let output = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", "output.png",
-            "--views", "front,back",
+            "-o",
+            "output.png",
+            "--views",
+            "front,back",
         ])
         .output()
         .unwrap();
@@ -689,7 +901,13 @@ fn test_print_front_view() {
     let output = dir.path().join("print-front.png");
 
     let status = stl_render()
-        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-front"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output.to_str().unwrap(),
+            "--view",
+            "print-front",
+        ])
         .status()
         .unwrap();
 
@@ -707,7 +925,13 @@ fn test_print_left_view() {
     let output = dir.path().join("print-left.png");
 
     let status = stl_render()
-        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-left"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output.to_str().unwrap(),
+            "--view",
+            "print-left",
+        ])
         .status()
         .unwrap();
 
@@ -721,7 +945,13 @@ fn test_print_right_view() {
     let output = dir.path().join("print-right.png");
 
     let status = stl_render()
-        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-right"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output.to_str().unwrap(),
+            "--view",
+            "print-right",
+        ])
         .status()
         .unwrap();
 
@@ -735,7 +965,13 @@ fn test_print_back_view() {
     let output = dir.path().join("print-back.png");
 
     let status = stl_render()
-        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-back"])
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output.to_str().unwrap(),
+            "--view",
+            "print-back",
+        ])
         .status()
         .unwrap();
 
@@ -759,7 +995,15 @@ fn test_print_views_differ() {
         (&back, "print-back"),
     ] {
         stl_render()
-            .args(["fixtures/single_triangle.stl", "-o", path.to_str().unwrap(), "--view", view, "--aa", "none"])
+            .args([
+                "fixtures/single_triangle.stl",
+                "-o",
+                path.to_str().unwrap(),
+                "--view",
+                view,
+                "--aa",
+                "none",
+            ])
             .status()
             .unwrap();
     }
@@ -783,10 +1027,14 @@ fn test_print_grid_produces_composite() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--view", "print-grid",
-            "--width", "512",
-            "--height", "512",
+            "-o",
+            output.to_str().unwrap(),
+            "--view",
+            "print-grid",
+            "--width",
+            "512",
+            "--height",
+            "512",
         ])
         .status()
         .unwrap();
@@ -808,11 +1056,16 @@ fn test_print_grid_has_visible_content_in_all_quadrants() {
     stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", output.to_str().unwrap(),
-            "--view", "print-grid",
-            "--width", "256",
-            "--height", "256",
-            "--background", "transparent",
+            "-o",
+            output.to_str().unwrap(),
+            "--view",
+            "print-grid",
+            "--width",
+            "256",
+            "--height",
+            "256",
+            "--background",
+            "transparent",
         ])
         .status()
         .unwrap();
@@ -821,10 +1074,10 @@ fn test_print_grid_has_visible_content_in_all_quadrants() {
 
     // Check each quadrant has some non-transparent pixels
     let quadrants = [
-        (0, 0, 128, 128),       // top-left
-        (128, 0, 256, 128),     // top-right
-        (0, 128, 128, 256),     // bottom-left
-        (128, 128, 256, 256),   // bottom-right
+        (0, 0, 128, 128),     // top-left
+        (128, 0, 256, 128),   // top-right
+        (0, 128, 128, 256),   // bottom-left
+        (128, 128, 256, 256), // bottom-right
     ];
 
     for (x1, y1, x2, y2) in quadrants {
@@ -839,9 +1092,59 @@ fn test_print_grid_has_visible_content_in_all_quadrants() {
         assert!(
             non_transparent > 100,
             "Quadrant ({},{}) to ({},{}) should have visible content, found {} pixels",
-            x1, y1, x2, y2, non_transparent
+            x1,
+            y1,
+            x2,
+            y2,
+            non_transparent
         );
     }
+}
+
+fn assert_print_grid_from_stdin(input_path: &str) {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("grid.png");
+    let stl_data = std::fs::read(input_path).unwrap();
+
+    let mut child = stl_render()
+        .args([
+            "-",
+            "-o",
+            output.to_str().unwrap(),
+            "--view",
+            "print-grid",
+            "--width",
+            "256",
+            "--height",
+            "256",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    child.stdin.take().unwrap().write_all(&stl_data).unwrap();
+    let status = child.wait().unwrap();
+
+    assert!(
+        status.success(),
+        "print-grid should read {} from stdin",
+        input_path
+    );
+    assert!(output.exists());
+
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 256);
+    assert_eq!(img.height(), 256);
+}
+
+#[test]
+fn test_print_grid_reads_binary_stl_from_stdin() {
+    assert_print_grid_from_stdin("fixtures/cube.stl");
+}
+
+#[test]
+fn test_print_grid_reads_ascii_stl_from_stdin() {
+    assert_print_grid_from_stdin("fixtures/cube_ascii.stl");
 }
 
 #[test]
@@ -853,8 +1156,10 @@ fn test_print_views_in_batch_mode() {
     let status = stl_render()
         .args([
             "fixtures/cube.stl",
-            "-o", &format!("{}/", outdir.display()),
-            "--views", "print-front,print-left,print-right,print-back",
+            "-o",
+            &format!("{}/", outdir.display()),
+            "--views",
+            "print-front,print-left,print-right,print-back",
         ])
         .status()
         .unwrap();

@@ -59,7 +59,12 @@ impl Framebuffer {
             return;
         }
 
-        let shade = compute_shade(normal, &camera.view_matrix, config.lighting, config.material_color);
+        let shade = compute_shade(
+            normal,
+            &camera.view_matrix,
+            config.lighting,
+            config.material_color,
+        );
 
         let min_x = s0.x.min(s1.x).min(s2.x).max(0.0) as u32;
         let max_x = s0.x.max(s1.x).max(s2.x).min((self.width - 1) as f32) as u32;
@@ -304,7 +309,11 @@ mod tests {
         fb.rasterize_triangle(&tri, &camera, &config);
 
         let filled_count = fb.color.iter().filter(|c| c[3] > 0).count();
-        assert!(filled_count > 100, "Triangle should fill significant area: {}", filled_count);
+        assert!(
+            filled_count > 100,
+            "Triangle should fill significant area: {}",
+            filled_count
+        );
     }
 
     #[test]
@@ -322,7 +331,10 @@ mod tests {
         fb.rasterize_triangle(&tri, &camera, &config);
 
         let filled_count = fb.color.iter().filter(|c| c[3] > 0).count();
-        assert_eq!(filled_count, 0, "Triangle outside viewport should not render");
+        assert_eq!(
+            filled_count, 0,
+            "Triangle outside viewport should not render"
+        );
     }
 
     #[test]
@@ -351,7 +363,11 @@ mod tests {
 
         let center_idx = (32 * 64 + 32) as usize;
         let pixel = fb.color[center_idx];
-        assert!(pixel[1] > pixel[0], "Nearer green triangle should win: {:?}", pixel);
+        assert!(
+            pixel[1] > pixel[0],
+            "Nearer green triangle should win: {:?}",
+            pixel
+        );
     }
 
     #[test]
@@ -391,7 +407,11 @@ mod tests {
 
         let shade = compute_shade(normal, &view_matrix, LightingPreset::Flat, material);
 
-        assert!(shade[0] < 50, "Facing away should be dark (ambient only): {:?}", shade);
+        assert!(
+            shade[0] < 50,
+            "Facing away should be dark (ambient only): {:?}",
+            shade
+        );
     }
 
     #[test]
@@ -457,12 +477,30 @@ mod tests {
         let view_matrix = Mat4::IDENTITY;
         let material = [200, 200, 200];
 
-        let front = compute_shade(Vec3::new(0.0, 0.0, 1.0), &view_matrix, LightingPreset::Flat, material);
-        let side = compute_shade(Vec3::new(1.0, 0.0, 0.0), &view_matrix, LightingPreset::Flat, material);
-        let back = compute_shade(Vec3::new(0.0, 0.0, -1.0), &view_matrix, LightingPreset::Flat, material);
+        let front = compute_shade(
+            Vec3::new(0.0, 0.0, 1.0),
+            &view_matrix,
+            LightingPreset::Flat,
+            material,
+        );
+        let side = compute_shade(
+            Vec3::new(1.0, 0.0, 0.0),
+            &view_matrix,
+            LightingPreset::Flat,
+            material,
+        );
+        let back = compute_shade(
+            Vec3::new(0.0, 0.0, -1.0),
+            &view_matrix,
+            LightingPreset::Flat,
+            material,
+        );
 
         assert!(front[0] > side[0], "Front should be brighter than side");
-        assert!(side[0] > back[0] || side[0] == back[0], "Side should be >= back (both get only ambient)");
+        assert!(
+            side[0] >= back[0],
+            "Side should be >= back (both get only ambient)"
+        );
     }
 
     #[test]
@@ -470,12 +508,36 @@ mod tests {
         let view_matrix = Mat4::IDENTITY;
         let material = [200, 200, 200];
 
-        let front = compute_shade(Vec3::new(0.0, 0.0, 1.0), &view_matrix, LightingPreset::Studio, material);
-        let left = compute_shade(Vec3::new(-1.0, 0.0, 0.0), &view_matrix, LightingPreset::Studio, material);
-        let right = compute_shade(Vec3::new(1.0, 0.0, 0.0), &view_matrix, LightingPreset::Studio, material);
+        let front = compute_shade(
+            Vec3::new(0.0, 0.0, 1.0),
+            &view_matrix,
+            LightingPreset::Studio,
+            material,
+        );
+        let left = compute_shade(
+            Vec3::new(-1.0, 0.0, 0.0),
+            &view_matrix,
+            LightingPreset::Studio,
+            material,
+        );
+        let right = compute_shade(
+            Vec3::new(1.0, 0.0, 0.0),
+            &view_matrix,
+            LightingPreset::Studio,
+            material,
+        );
 
-        assert!(front[0] > 100, "Front should be well-lit in studio: {:?}", front);
-        assert!(left[0] != right[0], "Studio lighting should be asymmetric: left={:?}, right={:?}", left, right);
+        assert!(
+            front[0] > 100,
+            "Front should be well-lit in studio: {:?}",
+            front
+        );
+        assert!(
+            left[0] != right[0],
+            "Studio lighting should be asymmetric: left={:?}, right={:?}",
+            left,
+            right
+        );
     }
 
     #[test]
@@ -483,17 +545,45 @@ mod tests {
         let view_matrix = Mat4::IDENTITY;
         let material = [200, 200, 200];
 
-        let front = compute_shade(Vec3::new(0.0, 0.0, 1.0), &view_matrix, LightingPreset::Technical, material);
-        let left = compute_shade(Vec3::new(-1.0, 0.0, 0.0), &view_matrix, LightingPreset::Technical, material);
-        let right = compute_shade(Vec3::new(1.0, 0.0, 0.0), &view_matrix, LightingPreset::Technical, material);
-        let top = compute_shade(Vec3::new(0.0, 1.0, 0.0), &view_matrix, LightingPreset::Technical, material);
+        let front = compute_shade(
+            Vec3::new(0.0, 0.0, 1.0),
+            &view_matrix,
+            LightingPreset::Technical,
+            material,
+        );
+        let left = compute_shade(
+            Vec3::new(-1.0, 0.0, 0.0),
+            &view_matrix,
+            LightingPreset::Technical,
+            material,
+        );
+        let right = compute_shade(
+            Vec3::new(1.0, 0.0, 0.0),
+            &view_matrix,
+            LightingPreset::Technical,
+            material,
+        );
+        let top = compute_shade(
+            Vec3::new(0.0, 1.0, 0.0),
+            &view_matrix,
+            LightingPreset::Technical,
+            material,
+        );
 
-        assert_eq!(left[0], right[0], "Technical should be symmetric left/right");
-        let variance = [front[0], left[0], top[0]].iter()
+        assert_eq!(
+            left[0], right[0],
+            "Technical should be symmetric left/right"
+        );
+        let variance = [front[0], left[0], top[0]]
+            .iter()
             .map(|&v| v as i32)
             .map(|v| (v - 128).abs())
-            .max().unwrap();
-        assert!(variance < 80, "Technical lighting should be relatively uniform");
+            .max()
+            .unwrap();
+        assert!(
+            variance < 80,
+            "Technical lighting should be relatively uniform"
+        );
     }
 
     #[test]
@@ -506,8 +596,12 @@ mod tests {
         let studio = compute_shade(normal, &view_matrix, LightingPreset::Studio, material);
         let technical = compute_shade(normal, &view_matrix, LightingPreset::Technical, material);
 
-        assert!(flat != studio || studio != technical,
+        assert!(
+            flat != studio || studio != technical,
             "Different presets should produce different results: flat={:?}, studio={:?}, technical={:?}",
-            flat, studio, technical);
+            flat,
+            studio,
+            technical
+        );
     }
 }

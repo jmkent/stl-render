@@ -1,7 +1,7 @@
 use std::fs;
 use std::process::ExitCode;
 
-use stl_render::{cli, OutputError, RenderError};
+use stl_render::{OutputError, RenderError, cli};
 
 fn main() -> ExitCode {
     match run() {
@@ -20,9 +20,7 @@ fn run() -> Result<(), RenderError> {
     if let Some(ref dir) = batch_config.output_dir
         && !dir.exists()
     {
-        fs::create_dir_all(dir).map_err(|e| {
-            RenderError::Output(OutputError::Io(e))
-        })?;
+        fs::create_dir_all(dir).map_err(|e| RenderError::Output(OutputError::Io(e)))?;
     }
 
     let is_batch = batch_config.is_batch_mode();
