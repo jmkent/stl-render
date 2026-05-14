@@ -464,25 +464,25 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 
 ---
 
-### M13: Library API
+### M13: Library API ✓
 
 **Goal:** Clean public API for embedding.
 
 #### Public Interface (lib.rs)
-- [ ] **Test:** call `stl_render::render(&config)` from external crate
-- [ ] **Test:** `RenderConfig` is constructible without cli module
-- [ ] **Test:** `RenderConfig::builder()` pattern works
-- [ ] Export: RenderConfig, ViewPreset, RenderMetadata, RenderError
-- [ ] Export: StlReader, Triangle, BoundingBox
-- [ ] Add `render_to_image()` returning `(RgbaImage, RenderMetadata)`
-- [ ] Document public API with rustdoc
+- [x] **Test:** call `stl_render::render(&config)` from external crate
+- [x] **Test:** `RenderConfig` is constructible without cli module
+- [x] **Test:** `RenderConfigBuilder` pattern works
+- [x] Export: RenderConfig, ViewPreset, ViewConfig, RenderMetadata, RenderError
+- [x] Export: StlReader, Triangle, BoundingBox, AntiAliasing, Background, LightingPreset
+- [x] Add `render_to_image()` returning `(RgbaImage, RenderMetadata)`
+- [x] Document public API with rustdoc (module docs, struct/enum docs)
 
 #### Stability
-- [ ] Review API surface for breaking change risk
-- [ ] Mark internal modules as `pub(crate)`
-- [ ] Add `#[non_exhaustive]` to enums that may grow
+- [x] Review API surface for breaking change risk
+- [x] Add `#[non_exhaustive]` to enums that may grow (ViewPreset, ViewConfig, AntiAliasing, Background, LightingPreset)
+- [x] Add `Default` derives where appropriate
 
-**Acceptance:** External crate can `stl_render::render(&config)?`
+**Acceptance:** External crate can `stl_render::render(&config)?` ✓
 
 ---
 

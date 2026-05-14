@@ -1,3 +1,37 @@
+//! # stl-render
+//!
+//! A fast, headless library for rendering STL files to PNG images.
+//!
+//! ## Quick Start
+//!
+//! ```no_run
+//! use stl_render::{render, RenderConfigBuilder, ViewPreset};
+//!
+//! let config = RenderConfigBuilder::new("model.stl", "output.png")
+//!     .view(ViewPreset::Print)
+//!     .size(1024)
+//!     .material_color([193, 154, 107]) // tan
+//!     .build();
+//!
+//! let metadata = render(&config)?;
+//! println!("Rendered {} triangles", metadata.triangle_count);
+//! # Ok::<(), stl_render::RenderError>(())
+//! ```
+//!
+//! ## Render to Image (without writing to disk)
+//!
+//! ```no_run
+//! use stl_render::{render_to_image, RenderConfigBuilder};
+//!
+//! let config = RenderConfigBuilder::new("model.stl", "-") // output path ignored
+//!     .size(512)
+//!     .build();
+//!
+//! let (image, metadata) = render_to_image(&config)?;
+//! // `image` is an `image::RgbaImage` you can manipulate or encode yourself
+//! # Ok::<(), stl_render::RenderError>(())
+//! ```
+
 pub mod camera;
 pub mod cli;
 pub mod mesh;
@@ -5,7 +39,11 @@ pub mod output;
 pub mod render;
 pub mod stl;
 
-pub use cli::{BatchConfig, RenderConfig};
+// Re-export public types for library consumers
+pub use cli::{
+    AntiAliasing, Background, BatchConfig, LightingPreset, RenderConfig, RenderConfigBuilder,
+    ViewConfig, ViewPreset,
+};
 pub use mesh::BoundingBox;
 pub use output::{OutputError, RenderMetadata};
 pub use stl::{StlError, StlReader, Triangle};
@@ -25,6 +63,7 @@ pub enum RenderError {
 }
 
 impl RenderError {
+    /// Get the appropriate exit code for this error type.
     pub fn exit_code(&self) -> std::process::ExitCode {
         match self {
             Self::Config(_) => std::process::ExitCode::from(1),
@@ -34,12 +73,34 @@ impl RenderError {
     }
 }
 
-pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+/// Render an STL file to an image without writing to disk.
+///
+/// Returns the rendered image and metadata. Use this when you want to
+/// manipulate the image further or encode it yourself.
+///
+/// # Example
+///
+/// ```no_run
+/// use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
+///
+/// let config = RenderConfigBuilder::new("model.stl", "-")
+///     .view(ViewPreset::Iso)
+///     .size(512)
+///     .build();
+///
+/// let (image, metadata) = render_to_image(&config)?;
+/// println!("Rendered {}x{} image with {} triangles",
+///     image.width(), image.height(), metadata.triangle_count);
+/// # Ok::<(), stl_render::RenderError>(())
+/// ```
+pub fn render_to_image(
+    config: &RenderConfig,
+) -> Result<(image::RgbaImage, RenderMetadata), RenderError> {
     use cli::{ViewConfig, ViewPreset};
 
     // Check if this is a grid render
     if let ViewConfig::Preset(ViewPreset::PrintGrid) = config.view {
-        return render_print_grid(config);
+        return render_print_grid_to_image(config);
     }
 
     // Parse STL and compute bounds (first pass)
@@ -62,10 +123,7 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
         eprintln!("Rendered {}x{} image", config.width, config.height);
     }
 
-    // Write output
-    write_output(&image, config)?;
-
-    // Write metadata if requested
+    // Build metadata
     let dims = bounds.dimensions();
     let metadata = RenderMetadata {
         input_file: config.input.to_string_lossy().to_string(),
@@ -74,6 +132,35 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
         dimensions: [dims.x, dims.y, dims.z],
     };
 
+    Ok((image, metadata))
+}
+
+/// Render an STL file to a PNG file.
+///
+/// This is the main entry point for CLI-style rendering. For library use
+/// without file I/O, see [`render_to_image`].
+///
+/// # Example
+///
+/// ```no_run
+/// use stl_render::{render, RenderConfigBuilder, ViewPreset};
+///
+/// let config = RenderConfigBuilder::new("model.stl", "output.png")
+///     .view(ViewPreset::Print)
+///     .material_color([193, 154, 107])
+///     .build();
+///
+/// let metadata = render(&config)?;
+/// println!("Wrote {} triangles to output.png", metadata.triangle_count);
+/// # Ok::<(), stl_render::RenderError>(())
+/// ```
+pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+    let (image, metadata) = render_to_image(config)?;
+
+    // Write output
+    write_output(&image, config)?;
+
+    // Write metadata if requested
     if let Some(ref meta_path) = config.metadata_path {
         output::write_metadata(&metadata, meta_path)?;
     }
@@ -130,7 +217,9 @@ fn render_single_view(
     Ok(fb.into_image(config.aa))
 }
 
-fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+fn render_print_grid_to_image(
+    config: &RenderConfig,
+) -> Result<(image::RgbaImage, RenderMetadata), RenderError> {
     use cli::{ViewConfig, ViewPreset};
     use image::{GenericImage, RgbaImage};
 
@@ -212,10 +301,7 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
         eprintln!("Rendered {}x{} grid (4 views)", config.width, config.height);
     }
 
-    // Write output
-    write_output(&composite, config)?;
-
-    // Write metadata if requested
+    // Build metadata
     let dims = bounds.dimensions();
     let metadata = RenderMetadata {
         input_file: config.input.to_string_lossy().to_string(),
@@ -224,11 +310,7 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
         dimensions: [dims.x, dims.y, dims.z],
     };
 
-    if let Some(ref meta_path) = config.metadata_path {
-        output::write_metadata(&metadata, meta_path)?;
-    }
-
-    Ok(metadata)
+    Ok((composite, metadata))
 }
 
 fn open_stl_reader(config: &RenderConfig) -> Result<StlReader, RenderError> {

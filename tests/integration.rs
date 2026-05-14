@@ -1371,3 +1371,131 @@ fn test_print_views_in_batch_mode() {
     assert!(outdir.join("cube.print-right.png").exists());
     assert!(outdir.join("cube.print-back.png").exists());
 }
+
+// ============================================================================
+// Library API Tests (M13)
+// ============================================================================
+
+#[test]
+fn test_render_config_builder() {
+    use stl_render::{AntiAliasing, LightingPreset, RenderConfigBuilder, ViewPreset};
+
+    let config = RenderConfigBuilder::new("model.stl", "output.png")
+        .width(1024)
+        .height(768)
+        .view(ViewPreset::Print)
+        .aa(AntiAliasing::X4)
+        .material_color([193, 154, 107])
+        .lighting(LightingPreset::Flat)
+        .padding(0.1)
+        .build();
+
+    assert_eq!(config.width, 1024);
+    assert_eq!(config.height, 768);
+    assert_eq!(config.material_color, [193, 154, 107]);
+    assert_eq!(config.padding, 0.1);
+}
+
+#[test]
+fn test_render_config_builder_defaults() {
+    use stl_render::{AntiAliasing, Background, LightingPreset, RenderConfigBuilder, ViewConfig, ViewPreset};
+
+    let config = RenderConfigBuilder::new("input.stl", "output.png").build();
+
+    assert_eq!(config.width, 512);
+    assert_eq!(config.height, 512);
+    assert_eq!(config.view, ViewConfig::Preset(ViewPreset::Iso));
+    assert_eq!(config.aa, AntiAliasing::X2);
+    assert_eq!(config.background, Background::Transparent);
+    assert_eq!(config.lighting, LightingPreset::Studio);
+    assert_eq!(config.padding, 0.08);
+}
+
+#[test]
+fn test_render_config_builder_size_helper() {
+    use stl_render::RenderConfigBuilder;
+
+    let config = RenderConfigBuilder::new("input.stl", "output.png")
+        .size(256)
+        .build();
+
+    assert_eq!(config.width, 256);
+    assert_eq!(config.height, 256);
+}
+
+#[test]
+fn test_render_config_builder_custom_view() {
+    use stl_render::{RenderConfigBuilder, ViewConfig};
+
+    let config = RenderConfigBuilder::new("input.stl", "output.png")
+        .custom_view(45.0, 30.0)
+        .build();
+
+    assert_eq!(
+        config.view,
+        ViewConfig::Custom {
+            azimuth: 45.0,
+            elevation: 30.0
+        }
+    );
+}
+
+#[test]
+fn test_render_config_builder_solid_background() {
+    use stl_render::{Background, RenderConfigBuilder};
+
+    let config = RenderConfigBuilder::new("input.stl", "output.png")
+        .solid_background([32, 32, 32])
+        .build();
+
+    assert_eq!(config.background, Background::Solid);
+    assert_eq!(config.background_color, [32, 32, 32]);
+}
+
+#[test]
+fn test_render_to_image_returns_image_and_metadata() {
+    use stl_render::{render_to_image, RenderConfigBuilder};
+
+    let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+        .size(128)
+        .build();
+
+    let (image, metadata) = render_to_image(&config).unwrap();
+
+    assert_eq!(image.width(), 128);
+    assert_eq!(image.height(), 128);
+    assert_eq!(metadata.triangle_count, 12);
+    assert!(metadata.input_file.contains("cube.stl"));
+}
+
+#[test]
+fn test_render_to_image_with_print_grid() {
+    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
+
+    let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+        .view(ViewPreset::PrintGrid)
+        .size(256)
+        .build();
+
+    let (image, metadata) = render_to_image(&config).unwrap();
+
+    assert_eq!(image.width(), 256);
+    assert_eq!(image.height(), 256);
+    assert_eq!(metadata.triangle_count, 12);
+}
+
+#[test]
+fn test_library_exports_all_types() {
+    // This test verifies that all expected types are exported from the library
+    use stl_render::{
+        AntiAliasing, Background, BatchConfig, BoundingBox, LightingPreset, OutputError,
+        RenderConfig, RenderConfigBuilder, RenderError, RenderMetadata, StlError, StlReader,
+        Triangle, ViewConfig, ViewPreset,
+    };
+
+    // Just verify they exist and can be named
+    let _: fn() -> AntiAliasing = || AntiAliasing::X2;
+    let _: fn() -> Background = || Background::Transparent;
+    let _: fn() -> LightingPreset = || LightingPreset::Studio;
+    let _: fn() -> ViewPreset = || ViewPreset::Iso;
+}

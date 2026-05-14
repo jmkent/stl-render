@@ -135,65 +135,302 @@ pub struct Args {
     pub strict: bool,
 }
 
+/// Camera view presets for common viewing angles.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ViewPreset {
+    /// Front view (looking at -Z axis)
     Front,
+    /// Back view (looking at +Z axis)
     Back,
+    /// Left view (looking at +X axis)
     Left,
+    /// Right view (looking at -X axis)
     Right,
+    /// Top view (looking down -Y axis)
     Top,
+    /// Bottom view (looking up +Y axis)
     Bottom,
+    /// Isometric view (45° azimuth, 35° elevation)
     Iso,
+    /// Print bed view (Z-up, 20° azimuth, 25° elevation)
     Print,
+    /// Print bed view from front (Z-up)
     PrintFront,
+    /// Print bed view from left (Z-up)
     PrintLeft,
+    /// Print bed view from right (Z-up)
     PrintRight,
+    /// Print bed view from back (Z-up)
     PrintBack,
+    /// 2x2 grid of all four print angles
     PrintGrid,
 }
 
+/// Camera view configuration - either a preset or custom angles.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ViewConfig {
+    /// Use a predefined view preset
     Preset(ViewPreset),
-    Custom { azimuth: f32, elevation: f32 },
+    /// Custom camera angles (azimuth and elevation in degrees)
+    Custom {
+        /// Rotation around vertical axis (0-360°)
+        azimuth: f32,
+        /// Angle above horizon (-90° to 90°)
+        elevation: f32,
+    },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Anti-aliasing level (supersampling).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub enum AntiAliasing {
+    /// No anti-aliasing (fastest)
     None,
+    /// 2x supersampling (default, good quality)
+    #[default]
     X2,
+    /// 4x supersampling (best quality, slowest)
     X4,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Background type for rendered images.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub enum Background {
+    /// Transparent background (alpha = 0)
+    #[default]
     Transparent,
+    /// Solid color background (use with `background_color`)
     Solid,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Lighting preset for rendered images.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub enum LightingPreset {
+    /// Single front-facing light (good for technical drawings)
     Flat,
+    /// Three-point lighting: key + fill + rim (default, good for presentations)
+    #[default]
     Studio,
+    /// Uniform multi-directional lighting (good for inspection)
     Technical,
 }
 
+/// Configuration for rendering an STL file to an image.
+///
+/// Use [`RenderConfigBuilder`] for ergonomic construction:
+///
+/// ```no_run
+/// use stl_render::{RenderConfigBuilder, ViewPreset};
+///
+/// let config = RenderConfigBuilder::new("model.stl", "output.png")
+///     .view(ViewPreset::Print)
+///     .width(1024)
+///     .height(1024)
+///     .material_color([193, 154, 107]) // tan
+///     .build();
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderConfig {
+    /// Input STL file path (or "-" for stdin)
     pub input: PathBuf,
+    /// Output PNG file path (or "-" for stdout)
     pub output: PathBuf,
+    /// Output image width in pixels
     pub width: u32,
+    /// Output image height in pixels
     pub height: u32,
+    /// Camera view configuration
     pub view: ViewConfig,
+    /// Padding ratio around model (0.0 - 1.0)
     pub padding: f32,
+    /// Anti-aliasing level
     pub aa: AntiAliasing,
+    /// Background type
     pub background: Background,
+    /// Background color RGB (used when background is Solid)
     pub background_color: [u8; 3],
+    /// Material color RGB
     pub material_color: [u8; 3],
+    /// Lighting preset
     pub lighting: LightingPreset,
+    /// Optional path to write metadata JSON
     pub metadata_path: Option<PathBuf>,
+    /// Suppress progress output
     pub quiet: bool,
+    /// Show detailed progress
     pub verbose: bool,
+}
+
+/// Builder for [`RenderConfig`] with sensible defaults.
+///
+/// # Example
+///
+/// ```no_run
+/// use stl_render::{RenderConfigBuilder, ViewPreset, AntiAliasing};
+///
+/// let config = RenderConfigBuilder::new("model.stl", "output.png")
+///     .view(ViewPreset::Iso)
+///     .width(1024)
+///     .height(1024)
+///     .aa(AntiAliasing::X4)
+///     .build();
+/// ```
+#[derive(Debug, Clone)]
+pub struct RenderConfigBuilder {
+    input: PathBuf,
+    output: PathBuf,
+    width: u32,
+    height: u32,
+    view: ViewConfig,
+    padding: f32,
+    aa: AntiAliasing,
+    background: Background,
+    background_color: [u8; 3],
+    material_color: [u8; 3],
+    lighting: LightingPreset,
+    metadata_path: Option<PathBuf>,
+    quiet: bool,
+    verbose: bool,
+}
+
+impl RenderConfigBuilder {
+    /// Create a new builder with required input and output paths.
+    ///
+    /// Defaults:
+    /// - 512x512 pixels
+    /// - Isometric view
+    /// - 2x anti-aliasing
+    /// - Transparent background
+    /// - Light gray material (#cccccc)
+    /// - Studio lighting
+    pub fn new(input: impl Into<PathBuf>, output: impl Into<PathBuf>) -> Self {
+        Self {
+            input: input.into(),
+            output: output.into(),
+            width: 512,
+            height: 512,
+            view: ViewConfig::Preset(ViewPreset::Iso),
+            padding: 0.08,
+            aa: AntiAliasing::X2,
+            background: Background::Transparent,
+            background_color: [255, 255, 255],
+            material_color: [204, 204, 204],
+            lighting: LightingPreset::Studio,
+            metadata_path: None,
+            quiet: false,
+            verbose: false,
+        }
+    }
+
+    /// Set the output image width in pixels.
+    pub fn width(mut self, width: u32) -> Self {
+        self.width = width;
+        self
+    }
+
+    /// Set the output image height in pixels.
+    pub fn height(mut self, height: u32) -> Self {
+        self.height = height;
+        self
+    }
+
+    /// Set both width and height to the same value (square output).
+    pub fn size(mut self, size: u32) -> Self {
+        self.width = size;
+        self.height = size;
+        self
+    }
+
+    /// Set the camera view preset.
+    pub fn view(mut self, preset: ViewPreset) -> Self {
+        self.view = ViewConfig::Preset(preset);
+        self
+    }
+
+    /// Set custom camera angles (azimuth and elevation in degrees).
+    pub fn custom_view(mut self, azimuth: f32, elevation: f32) -> Self {
+        self.view = ViewConfig::Custom { azimuth, elevation };
+        self
+    }
+
+    /// Set the padding ratio around the model (0.0 - 1.0).
+    pub fn padding(mut self, padding: f32) -> Self {
+        self.padding = padding;
+        self
+    }
+
+    /// Set the anti-aliasing level.
+    pub fn aa(mut self, aa: AntiAliasing) -> Self {
+        self.aa = aa;
+        self
+    }
+
+    /// Set transparent background (default).
+    pub fn transparent_background(mut self) -> Self {
+        self.background = Background::Transparent;
+        self
+    }
+
+    /// Set solid background with the given RGB color.
+    pub fn solid_background(mut self, color: [u8; 3]) -> Self {
+        self.background = Background::Solid;
+        self.background_color = color;
+        self
+    }
+
+    /// Set the material color as RGB.
+    pub fn material_color(mut self, color: [u8; 3]) -> Self {
+        self.material_color = color;
+        self
+    }
+
+    /// Set the lighting preset.
+    pub fn lighting(mut self, lighting: LightingPreset) -> Self {
+        self.lighting = lighting;
+        self
+    }
+
+    /// Set the path for metadata JSON output.
+    pub fn metadata_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.metadata_path = Some(path.into());
+        self
+    }
+
+    /// Suppress progress output.
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
+        self
+    }
+
+    /// Enable verbose progress output.
+    pub fn verbose(mut self) -> Self {
+        self.verbose = true;
+        self
+    }
+
+    /// Build the [`RenderConfig`].
+    pub fn build(self) -> RenderConfig {
+        RenderConfig {
+            input: self.input,
+            output: self.output,
+            width: self.width,
+            height: self.height,
+            view: self.view,
+            padding: self.padding,
+            aa: self.aa,
+            background: self.background,
+            background_color: self.background_color,
+            material_color: self.material_color,
+            lighting: self.lighting,
+            metadata_path: self.metadata_path,
+            quiet: self.quiet,
+            verbose: self.verbose,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
