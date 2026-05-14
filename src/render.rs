@@ -407,16 +407,49 @@ mod tests {
     }
 
     #[test]
-    fn test_aa_downsampling() {
-        let fb = Framebuffer::new(8, 8, Background::Solid, [100, 100, 100]);
-        let img = fb.into_image(AntiAliasing::X2);
-        assert_eq!(img.width(), 4);
-        assert_eq!(img.height(), 4);
+    fn test_aa_none_preserves_resolution() {
+        let fb = Framebuffer::new(64, 64, Background::Solid, [100, 100, 100]);
+        let img = fb.into_image(AntiAliasing::None);
+        assert_eq!(img.width(), 64);
+        assert_eq!(img.height(), 64);
+    }
 
-        let fb4 = Framebuffer::new(16, 16, Background::Solid, [100, 100, 100]);
-        let img4 = fb4.into_image(AntiAliasing::X4);
-        assert_eq!(img4.width(), 4);
-        assert_eq!(img4.height(), 4);
+    #[test]
+    fn test_aa_2x_halves_resolution() {
+        let fb = Framebuffer::new(128, 128, Background::Solid, [100, 100, 100]);
+        let img = fb.into_image(AntiAliasing::X2);
+        assert_eq!(img.width(), 64);
+        assert_eq!(img.height(), 64);
+    }
+
+    #[test]
+    fn test_aa_4x_quarters_resolution() {
+        let fb = Framebuffer::new(256, 256, Background::Solid, [100, 100, 100]);
+        let img = fb.into_image(AntiAliasing::X4);
+        assert_eq!(img.width(), 64);
+        assert_eq!(img.height(), 64);
+    }
+
+    #[test]
+    fn test_aa_box_filter_averages() {
+        let mut fb = Framebuffer::new(4, 4, Background::Solid, [0, 0, 0]);
+        // Set top-left 2x2 block to white
+        fb.color[0] = [255, 255, 255, 255];
+        fb.color[1] = [255, 255, 255, 255];
+        fb.color[4] = [255, 255, 255, 255];
+        fb.color[5] = [255, 255, 255, 255];
+
+        let img = fb.into_image(AntiAliasing::X2);
+        assert_eq!(img.width(), 2);
+        assert_eq!(img.height(), 2);
+
+        // Top-left pixel should be white (average of 4 white pixels)
+        let tl = img.get_pixel(0, 0);
+        assert_eq!(tl[0], 255);
+
+        // Top-right pixel should be black (average of 4 black pixels)
+        let tr = img.get_pixel(1, 0);
+        assert_eq!(tr[0], 0);
     }
 
     #[test]

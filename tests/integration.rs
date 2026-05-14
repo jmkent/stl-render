@@ -235,3 +235,71 @@ fn test_lighting_presets_differ() {
     assert_ne!(flat_data, studio_data, "Flat and studio should differ");
     assert_ne!(studio_data, technical_data, "Studio and technical should differ");
 }
+
+#[test]
+fn test_aa_2x_output_dimensions() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("aa2x.png");
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--width", "256",
+            "--height", "256",
+            "--aa", "2x",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 256, "Output should match requested width");
+    assert_eq!(img.height(), 256, "Output should match requested height");
+}
+
+#[test]
+fn test_aa_4x_output_dimensions() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("aa4x.png");
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--width", "128",
+            "--height", "128",
+            "--aa", "4x",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 128);
+    assert_eq!(img.height(), 128);
+}
+
+#[test]
+fn test_aa_none_vs_2x_differ() {
+    let dir = tempdir().unwrap();
+    let none = dir.path().join("none.png");
+    let aa2x = dir.path().join("aa2x.png");
+
+    stl_render()
+        .args(["fixtures/cube.stl", "-o", none.to_str().unwrap(), "--aa", "none"])
+        .status()
+        .unwrap();
+
+    stl_render()
+        .args(["fixtures/cube.stl", "-o", aa2x.to_str().unwrap(), "--aa", "2x"])
+        .status()
+        .unwrap();
+
+    let none_data = std::fs::read(&none).unwrap();
+    let aa2x_data = std::fs::read(&aa2x).unwrap();
+
+    assert_ne!(none_data, aa2x_data, "AA should produce different output than no AA");
+}
