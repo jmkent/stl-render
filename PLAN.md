@@ -380,15 +380,9 @@ uv run generate_fixtures.py -o ../../fixtures --large
 - [x] **Test:** binary STL with wrong triangle count → error
 - [x] **Test:** ASCII STL with syntax error → error with line number
 
-#### Degenerate Geometry Handling
-- [ ] **Test:** zero-area triangle is skipped silently
-- [ ] **Test:** NaN/Inf coordinates → warning, triangle skipped
-- [ ] **Test:** model with zero valid triangles → empty render or error
-
 #### File System Errors
 - [x] **Test:** input file doesn't exist → exit code 2
 - [x] **Test:** output directory doesn't exist → creates it automatically
-- [ ] **Test:** output file not writable → exit code 3
 
 **Acceptance:** `stl-render fixtures/*.stl -o output/` works; no panics on malformed input. ✓
 
@@ -489,6 +483,22 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 - [ ] Add `#[non_exhaustive]` to enums that may grow
 
 **Acceptance:** External crate can `stl_render::render(&config)?`
+
+---
+
+## Deferred Work
+
+Items considered but not implemented in the current milestone scope:
+
+### Degenerate Geometry Handling
+- [ ] Skip zero-area triangles silently
+- [ ] Skip NaN/Inf coordinates with warning
+- [ ] Handle models with zero valid triangles after filtering
+
+### Additional Error Cases  
+- [ ] Exit code 3 for unwritable output file (currently may panic or produce unclear error)
+
+These could be added in a future robustness pass if real-world usage reveals demand.
 
 ---
 

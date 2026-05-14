@@ -93,10 +93,12 @@ src/
 
 ## Data Flow
 
+### Single File Mode
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         CLI (cli.rs)                            │
-│  Parse args → validate → build RenderConfig                     │
+│  Parse args → validate → build BatchConfig → iter_jobs()        │
 └─────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
@@ -127,13 +129,34 @@ src/
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Batch Mode
+
+When multiple inputs or views are requested:
+
+```
+BatchConfig.iter_jobs() → [RenderConfig, RenderConfig, ...]
+                                │
+            ┌───────────────────┼───────────────────┐
+            ▼                   ▼                   ▼
+    ┌───────────────┐   ┌───────────────┐   ┌───────────────┐
+    │ render(job1)  │   │ render(job2)  │   │ render(jobN)  │
+    └───────────────┘   └───────────────┘   └───────────────┘
+            │                   │                   │
+            └───────────────────┼───────────────────┘
+                                ▼
+                    Collect results, print summary
+                    Exit with worst error code
+```
+
+For `--recursive`, input directories are expanded to individual STL files before iteration. Output paths preserve the relative directory structure.
+
 ---
 
 ## Module Details
 
 ### main.rs
 
-Minimal entry point:
+Entry point with batch processing loop:
 ```rust
 fn main() -> ExitCode {
     match run() {
@@ -144,24 +167,49 @@ fn main() -> ExitCode {
         }
     }
 }
+
+fn run() -> Result<(), RenderError> {
+    let batch_config = cli::parse_args()?;
+    
+    for config in batch_config.iter_jobs() {
+        match stl_render::render(&config) {
+            Ok(_) => success_count += 1,
+            Err(e) if batch_config.strict => return Err(e),
+            Err(e) => errors.push(e),
+        }
+    }
+    
+    // Return worst error or Ok
+}
 ```
 
 ### cli.rs
 
 Responsibilities:
 - Define CLI args with clap derive
-- Validate mutual exclusivity (--view vs --azimuth/--elevation)
-- Build `RenderConfig` from validated args
+- Validate mutual exclusivity (--view vs --azimuth/--elevation, --view vs --views)
+- Build `BatchConfig` from validated args (handles single and batch modes)
+- Expand recursive directory inputs
+- Parse material color presets and hex values
 - Handle `--help`, `--version`
 
 ```rust
+pub struct BatchConfig {
+    pub inputs: Vec<BatchInput>,        // Expanded input files
+    pub output_dir: Option<PathBuf>,    // For batch mode
+    pub output_file: Option<PathBuf>,   // For single file mode
+    pub views: Vec<ViewConfig>,         // One or more views to render
+    pub strict: bool,                   // Abort on first error
+    pub recursive: bool,                // Traverse directories
+    // ... shared render settings
+}
+
 pub struct RenderConfig {
     pub input: PathBuf,
     pub output: PathBuf,
     pub width: u32,
     pub height: u32,
     pub view: ViewConfig,
-    pub projection: Projection,
     pub padding: f32,
     pub background: Background,
     pub material_color: [u8; 3],
@@ -175,6 +223,11 @@ pub enum ViewConfig {
     Custom { azimuth: f32, elevation: f32 },
 }
 ```
+
+Batch mode is detected when:
+- Multiple input files provided
+- `--views` flag used with multiple views
+- `--recursive` flag with directory input
 
 ### stl/mod.rs
 
@@ -252,7 +305,8 @@ pub fn compute_normal(v0: Vec3, v1: Vec3, v2: Vec3) -> Vec3;
 View and projection:
 ```rust
 pub enum ViewPreset {
-    Front, Back, Left, Right, Top, Bottom, Iso, Print,
+    Front, Back, Left, Right, Top, Bottom, Iso,
+    Print, PrintFront, PrintLeft, PrintRight, PrintBack, PrintGrid,
 }
 
 pub struct Camera {
@@ -392,13 +446,12 @@ impl RenderError {
 ```toml
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-glam = "0.27"
+glam = "0.29"
 image = { version = "0.25", default-features = false, features = ["png"] }
 memmap2 = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = "1"
-tiny-skia = "0.11"
+thiserror = "2"
 ```
 
 No GPU dependencies. No runtime requirements beyond libc.
@@ -412,7 +465,6 @@ No GPU dependencies. No runtime requirements beyond libc.
 | image | PNG encoding | Standard, minimal features enabled |
 | memmap2 | Memory-mapped files | Maintained fork of memmap |
 | thiserror | Error types | Derive macro, zero runtime cost |
-| tiny-skia | 2D compositing | Software-only, good for downsampling |
 
 Avoided:
 - `nalgebra`: overkill for basic transforms
