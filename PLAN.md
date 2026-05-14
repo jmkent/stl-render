@@ -509,17 +509,19 @@ These issues were found during a project state review. Treat them as near-term s
 
 **Acceptance:** Invalid CLI values fail fast with a useful message and exit code `1`.
 
-### K2: Empty STL Produces Invalid Metadata
+### K2: Empty STL Produces Invalid Metadata ✓
 
-**Problem:** Zero-triangle STL files render successfully, but metadata writes `null` values for bounds and dimensions because invalid `f32::INFINITY`/`NEG_INFINITY` bounds are serialized.
+**Problem:** Zero-triangle STL files previously rendered successfully, but metadata wrote `null` values for bounds and dimensions because invalid `f32::INFINITY`/`NEG_INFINITY` bounds were serialized.
 
-- [ ] Decide policy for zero valid triangles: explicit input error, empty render with nullable metadata, or finite zero bounds
-- [ ] **Test:** `fixtures/empty.stl` follows the chosen policy consistently
-- [ ] **Test:** metadata for empty geometry never serializes non-finite bounds or dimensions
-- [ ] **Test:** verbose output for empty geometry is clear and does not print invalid dimensions
-- [ ] Add a validity check after `compute_bounds()`
-- [ ] Update `RenderMetadata` schema or rendering behavior to match the chosen policy
-- [ ] Update README and examples if empty files remain valid inputs
+**Resolution:** Zero-triangle STL files remain parser-valid but are rejected for rendering as input errors before verbose bounds output, image output, or metadata serialization.
+
+- [x] Decide policy for zero valid triangles: explicit input error
+- [x] **Test:** `fixtures/empty.stl` follows the chosen policy consistently
+- [x] **Test:** metadata for empty geometry never serializes non-finite bounds or dimensions
+- [x] **Test:** verbose output for empty geometry is clear and does not print invalid dimensions
+- [x] Add a validity check after `compute_bounds()`
+- [x] Update rendering behavior to match the chosen policy
+- [x] Update README with empty-geometry rendering behavior
 
 **Acceptance:** Empty geometry has deterministic, documented behavior and metadata remains valid JSON data.
 
@@ -547,14 +549,16 @@ These issues were found during a project state review. Treat them as near-term s
 
 **Acceptance:** Local verification matches CI, and CI covers tests/examples with clippy.
 
-### K5: README Rust Version Is Too Low
+### K5: README Rust Version Is Too Low ✓
 
-**Problem:** `Cargo.toml` uses Rust edition 2024, but README says Rust 1.70+. Rust 1.70 cannot build an edition 2024 crate.
+**Problem:** `Cargo.toml` uses Rust edition 2024, but README previously said Rust 1.70+. Rust 1.70 cannot build an edition 2024 crate.
 
-- [ ] Determine the actual MSRV for the crate and dependencies
-- [ ] Add `rust-version` to `Cargo.toml`
-- [ ] Update README prerequisites to match `Cargo.toml`
-- [ ] Optionally add an MSRV check job to CI
+**Resolution:** MSRV is now Rust 1.88, matching the current edition and language features used by the codebase.
+
+- [x] Determine the actual MSRV for the crate and dependencies
+- [x] Add `rust-version` to `Cargo.toml`
+- [x] Update README prerequisites to match `Cargo.toml`
+- [x] Optionally add an MSRV check job to CI
 
 **Acceptance:** Documented Rust version, Cargo metadata, and CI expectations agree.
 

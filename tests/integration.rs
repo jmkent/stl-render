@@ -458,6 +458,40 @@ fn test_truncated_file_error() {
 }
 
 #[test]
+fn test_empty_stl_render_is_input_error() {
+    let dir = tempdir().unwrap();
+    let output_path = dir.path().join("empty.png");
+    let metadata_path = dir.path().join("empty.json");
+
+    let output = stl_render()
+        .args([
+            "fixtures/empty.stl",
+            "-o", output_path.to_str().unwrap(),
+            "--metadata", metadata_path.to_str().unwrap(),
+            "--verbose",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success(), "Empty STL should fail to render");
+    assert_eq!(output.status.code(), Some(2), "Should be input error (code 2)");
+    assert!(!output_path.exists(), "Empty STL should not write a PNG");
+    assert!(!metadata_path.exists(), "Empty STL should not write metadata");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no triangles"),
+        "Should explain that there are no triangles: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("inf") && !stderr.contains("NaN"),
+        "Verbose output should not expose invalid bounds: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_verbose_shows_triangle_count() {
     let dir = tempdir().unwrap();
     let output = dir.path().join("verbose.png");

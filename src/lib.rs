@@ -58,6 +58,7 @@ pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
         StlReader::open(&config.input)?
     };
     let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
+    validate_renderable_geometry(&bounds, triangle_count)?;
 
     if config.verbose {
         let dims = bounds.dimensions();
@@ -152,6 +153,7 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
     // Parse STL and compute bounds
     let reader = StlReader::open(&config.input)?;
     let (bounds, triangle_count) = mesh::compute_bounds(&reader)?;
+    validate_renderable_geometry(&bounds, triangle_count)?;
 
     if config.verbose {
         let dims = bounds.dimensions();
@@ -242,6 +244,34 @@ fn render_print_grid(config: &RenderConfig) -> Result<RenderMetadata, RenderErro
     }
 
     Ok(metadata)
+}
+
+fn validate_renderable_geometry(bounds: &BoundingBox, triangle_count: u64) -> Result<(), RenderError> {
+    if triangle_count == 0 || !bounds.is_valid() {
+        return Err(RenderError::Stl(StlError::InvalidFormat(
+            "STL contains no triangles".into(),
+        )));
+    }
+
+    let dims = bounds.dimensions();
+    let values = [
+        bounds.min[0],
+        bounds.min[1],
+        bounds.min[2],
+        bounds.max[0],
+        bounds.max[1],
+        bounds.max[2],
+        dims.x,
+        dims.y,
+        dims.z,
+    ];
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(RenderError::Stl(StlError::InvalidFormat(
+            "STL bounds contain non-finite values".into(),
+        )));
+    }
+
+    Ok(())
 }
 
 fn write_output(image: &image::RgbaImage, config: &RenderConfig) -> Result<(), RenderError> {

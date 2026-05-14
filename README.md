@@ -156,11 +156,13 @@ View presets:
 | 2 | Input error (can't read/parse STL) |
 | 3 | Output error (can't write PNG) |
 
+Zero-triangle STL files are valid STL containers, but `stl-render` rejects them for rendering with exit code 2 because there is no geometry to frame or describe in metadata.
+
 ## Development
 
 ### Prerequisites
 
-- Rust 1.70+
+- Rust 1.88+
 - No GPU required
 
 ### Build & Test
