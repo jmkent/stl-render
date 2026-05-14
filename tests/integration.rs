@@ -646,3 +646,188 @@ fn test_batch_requires_directory_for_multiple_views() {
     assert!(!output.status.success());
     assert_eq!(output.status.code(), Some(1)); // Config error
 }
+
+// M11: Print View Presets tests
+
+#[test]
+fn test_print_front_view() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("print-front.png");
+
+    let status = stl_render()
+        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-front"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    let img = image::open(&output).unwrap().into_rgba8();
+    let non_transparent: usize = img.pixels().filter(|p| p[3] > 0).count();
+    assert!(non_transparent > 1000, "Should have visible content");
+}
+
+#[test]
+fn test_print_left_view() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("print-left.png");
+
+    let status = stl_render()
+        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-left"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_print_right_view() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("print-right.png");
+
+    let status = stl_render()
+        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-right"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_print_back_view() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("print-back.png");
+
+    let status = stl_render()
+        .args(["fixtures/cube.stl", "-o", output.to_str().unwrap(), "--view", "print-back"])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+}
+
+#[test]
+fn test_print_views_differ() {
+    // Use single_triangle which is asymmetric (cube/sphere/cylinder are too symmetric)
+    let dir = tempdir().unwrap();
+    let front = dir.path().join("front.png");
+    let left = dir.path().join("left.png");
+    let right = dir.path().join("right.png");
+    let back = dir.path().join("back.png");
+
+    for (path, view) in [
+        (&front, "print-front"),
+        (&left, "print-left"),
+        (&right, "print-right"),
+        (&back, "print-back"),
+    ] {
+        stl_render()
+            .args(["fixtures/single_triangle.stl", "-o", path.to_str().unwrap(), "--view", view, "--aa", "none"])
+            .status()
+            .unwrap();
+    }
+
+    let front_data = std::fs::read(&front).unwrap();
+    let left_data = std::fs::read(&left).unwrap();
+    let right_data = std::fs::read(&right).unwrap();
+    let back_data = std::fs::read(&back).unwrap();
+
+    assert_ne!(front_data, left_data, "Front and left should differ");
+    assert_ne!(front_data, right_data, "Front and right should differ");
+    assert_ne!(front_data, back_data, "Front and back should differ");
+    assert_ne!(left_data, back_data, "Left and back should differ");
+}
+
+#[test]
+fn test_print_grid_produces_composite() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("grid.png");
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--view", "print-grid",
+            "--width", "512",
+            "--height", "512",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+
+    // Verify dimensions are correct
+    let img = image::open(&output).unwrap();
+    assert_eq!(img.width(), 512, "Grid width should match requested");
+    assert_eq!(img.height(), 512, "Grid height should match requested");
+}
+
+#[test]
+fn test_print_grid_has_visible_content_in_all_quadrants() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("grid.png");
+
+    stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", output.to_str().unwrap(),
+            "--view", "print-grid",
+            "--width", "256",
+            "--height", "256",
+            "--background", "transparent",
+        ])
+        .status()
+        .unwrap();
+
+    let img = image::open(&output).unwrap().into_rgba8();
+
+    // Check each quadrant has some non-transparent pixels
+    let quadrants = [
+        (0, 0, 128, 128),       // top-left
+        (128, 0, 256, 128),     // top-right
+        (0, 128, 128, 256),     // bottom-left
+        (128, 128, 256, 256),   // bottom-right
+    ];
+
+    for (x1, y1, x2, y2) in quadrants {
+        let mut non_transparent = 0;
+        for y in y1..y2 {
+            for x in x1..x2 {
+                if img.get_pixel(x, y)[3] > 0 {
+                    non_transparent += 1;
+                }
+            }
+        }
+        assert!(
+            non_transparent > 100,
+            "Quadrant ({},{}) to ({},{}) should have visible content, found {} pixels",
+            x1, y1, x2, y2, non_transparent
+        );
+    }
+}
+
+#[test]
+fn test_print_views_in_batch_mode() {
+    let dir = tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let status = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o", &format!("{}/", outdir.display()),
+            "--views", "print-front,print-left,print-right,print-back",
+        ])
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(outdir.join("cube.print-front.png").exists());
+    assert!(outdir.join("cube.print-left.png").exists());
+    assert!(outdir.join("cube.print-right.png").exists());
+    assert!(outdir.join("cube.print-back.png").exists());
+}

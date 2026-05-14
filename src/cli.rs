@@ -118,6 +118,11 @@ pub enum ViewPreset {
     Bottom,
     Iso,
     Print,
+    PrintFront,
+    PrintLeft,
+    PrintRight,
+    PrintBack,
+    PrintGrid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -267,6 +272,11 @@ fn view_preset_name(preset: ViewPreset) -> &'static str {
         ViewPreset::Bottom => "bottom",
         ViewPreset::Iso => "iso",
         ViewPreset::Print => "print",
+        ViewPreset::PrintFront => "print-front",
+        ViewPreset::PrintLeft => "print-left",
+        ViewPreset::PrintRight => "print-right",
+        ViewPreset::PrintBack => "print-back",
+        ViewPreset::PrintGrid => "print-grid",
     }
 }
 
@@ -374,6 +384,11 @@ fn parse_view_preset(s: &str) -> ViewPreset {
         "bottom" => ViewPreset::Bottom,
         "iso" | "isometric" => ViewPreset::Iso,
         "print" | "bed" => ViewPreset::Print,
+        "print-front" | "printfront" => ViewPreset::PrintFront,
+        "print-left" | "printleft" => ViewPreset::PrintLeft,
+        "print-right" | "printright" => ViewPreset::PrintRight,
+        "print-back" | "printback" => ViewPreset::PrintBack,
+        "print-grid" | "printgrid" => ViewPreset::PrintGrid,
         _ => ViewPreset::Iso,
     }
 }

@@ -16,11 +16,27 @@ impl Camera {
         height: u32,
         padding: f32,
     ) -> Self {
-        if preset == ViewPreset::Print {
-            return Self::from_print_view(bounds, width, height, padding);
+        match preset {
+            ViewPreset::Print | ViewPreset::PrintFront => {
+                Self::from_print_view_with_azimuth(20.0, bounds, width, height, padding)
+            }
+            ViewPreset::PrintLeft => {
+                Self::from_print_view_with_azimuth(110.0, bounds, width, height, padding)
+            }
+            ViewPreset::PrintRight => {
+                Self::from_print_view_with_azimuth(-70.0, bounds, width, height, padding)
+            }
+            ViewPreset::PrintBack => {
+                Self::from_print_view_with_azimuth(200.0, bounds, width, height, padding)
+            }
+            ViewPreset::PrintGrid => {
+                panic!("PrintGrid should be handled at a higher level, not in Camera::from_preset")
+            }
+            _ => {
+                let (azimuth, elevation) = preset_to_angles(preset);
+                Self::from_angles(azimuth, elevation, bounds, width, height, padding)
+            }
         }
-        let (azimuth, elevation) = preset_to_angles(preset);
-        Self::from_angles(azimuth, elevation, bounds, width, height, padding)
     }
 
     pub fn from_angles(
@@ -63,23 +79,32 @@ impl Camera {
         }
     }
 
-    /// Print bed view: Z-up coordinate system, looking from front and slightly above.
+    /// Print bed view: Z-up coordinate system with configurable azimuth.
     /// Models Z axis as vertical in the rendered image.
-    fn from_print_view(bounds: &BoundingBox, width: u32, height: u32, padding: f32) -> Self {
+    /// - azimuth: rotation around Z axis in degrees (0 = front, 90 = right, etc.)
+    fn from_print_view_with_azimuth(
+        azimuth: f32,
+        bounds: &BoundingBox,
+        width: u32,
+        height: u32,
+        padding: f32,
+    ) -> Self {
         let center = bounds.center();
         let dims = bounds.dimensions();
         let max_dim = dims.x.max(dims.y).max(dims.z).max(0.001);
 
         let distance = max_dim * 3.0;
 
-        // Position camera in front (-Y) and above (+Z), with slight X offset
-        // azimuth 20° around Z, elevation 25° from XY plane
-        let az_rad = 20.0_f32.to_radians();
+        // Fixed elevation of 25° from XY plane
+        let az_rad = azimuth.to_radians();
         let el_rad = 25.0_f32.to_radians();
 
+        // Position camera using Z-up spherical coordinates
+        // In Z-up coords: azimuth rotates in XY plane, elevation lifts from XY plane
+        let horizontal_dist = distance * el_rad.cos();
         let eye = Vec3::new(
-            center.x + distance * el_rad.cos() * az_rad.sin(),
-            center.y - distance * el_rad.cos() * az_rad.cos(), // negative Y = looking from front
+            center.x + horizontal_dist * az_rad.sin(),
+            center.y - horizontal_dist * az_rad.cos(),
             center.z + distance * el_rad.sin(),
         );
 
@@ -112,7 +137,14 @@ fn preset_to_angles(preset: ViewPreset) -> (f32, f32) {
         ViewPreset::Top => (0.0, 89.99), // Slightly less than 90 to avoid gimbal lock
         ViewPreset::Bottom => (0.0, -89.99),
         ViewPreset::Iso => (45.0, 35.264), // arctan(1/sqrt(2)) ≈ 35.264°
-        ViewPreset::Print => unreachable!("Print uses Z-up, handled in from_preset"),
+        ViewPreset::Print
+        | ViewPreset::PrintFront
+        | ViewPreset::PrintLeft
+        | ViewPreset::PrintRight
+        | ViewPreset::PrintBack
+        | ViewPreset::PrintGrid => {
+            unreachable!("Print views use Z-up, handled in from_preset")
+        }
     }
 }
 
@@ -404,6 +436,74 @@ mod tests {
                 "Corner {:?} outside NDC in wide viewport: {:?}",
                 corner,
                 clip
+            );
+        }
+    }
+
+    #[test]
+    fn test_print_views_produce_valid_matrices() {
+        let bounds = unit_cube_bounds();
+
+        for preset in [
+            ViewPreset::Print,
+            ViewPreset::PrintFront,
+            ViewPreset::PrintLeft,
+            ViewPreset::PrintRight,
+            ViewPreset::PrintBack,
+        ] {
+            let camera = Camera::from_preset(preset, &bounds, 512, 512, 0.08);
+            let mvp = camera.matrix();
+
+            // Matrix should have finite values
+            for i in 0..4 {
+                for j in 0..4 {
+                    assert!(
+                        mvp.col(i)[j].is_finite(),
+                        "Print preset {:?} produced NaN/Inf in matrix",
+                        preset
+                    );
+                }
+            }
+
+            // Corners should project to valid NDC
+            for corner in bbox_corners(&bounds) {
+                let clip = mvp.project_point3(corner);
+                assert!(
+                    clip.x.is_finite() && clip.y.is_finite() && clip.z.is_finite(),
+                    "Print preset {:?} produced NaN/Inf projection for {:?}",
+                    preset,
+                    corner
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_print_views_use_z_up() {
+        let bounds = unit_cube_bounds();
+
+        // All print views should show Z as vertical in the image
+        // This means a point moving in +Z should move in +Y in screen space
+        for preset in [
+            ViewPreset::Print,
+            ViewPreset::PrintFront,
+            ViewPreset::PrintLeft,
+            ViewPreset::PrintRight,
+            ViewPreset::PrintBack,
+        ] {
+            let camera = Camera::from_preset(preset, &bounds, 512, 512, 0.08);
+            let mvp = camera.matrix();
+
+            let origin = mvp.project_point3(Vec3::ZERO);
+            let up_z = mvp.project_point3(Vec3::new(0.0, 0.0, 0.5));
+
+            // +Z in world should map to +Y in screen (up in image)
+            assert!(
+                up_z.y > origin.y,
+                "Print preset {:?} does not show Z-up: origin.y={}, up_z.y={}",
+                preset,
+                origin.y,
+                up_z.y
             );
         }
     }

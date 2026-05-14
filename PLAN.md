@@ -391,7 +391,7 @@ uv run generate_fixtures.py -o ../../fixtures --large
 
 ---
 
-### M11: Print View Presets & Grid
+### M11: Print View Presets & Grid ✓
 
 **Goal:** Directional print views (all Z-up) and 2x2 grid composite.
 
@@ -407,13 +407,13 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 | print-right | -70° | Looking from right |
 | print-back | 200° | Looking from back |
 
-- [ ] **Test:** `--view print-left` renders with Z-up orientation
-- [ ] **Test:** `--view print-right` renders with Z-up orientation
-- [ ] **Test:** `--view print-back` renders with Z-up orientation
-- [ ] **Test:** `--view print-front` is alias for `--view print`
-- [ ] **Test:** all print-* views produce valid matrices
-- [ ] Implement `from_print_view_with_angles(azimuth, elevation)` in camera.rs
-- [ ] Add `PrintFront`, `PrintLeft`, `PrintRight`, `PrintBack` to ViewPreset enum
+- [x] **Test:** `--view print-left` renders with Z-up orientation
+- [x] **Test:** `--view print-right` renders with Z-up orientation
+- [x] **Test:** `--view print-back` renders with Z-up orientation
+- [x] **Test:** `--view print-front` is alias for `--view print`
+- [x] **Test:** all print-* views produce valid matrices
+- [x] Implement `from_print_view_with_azimuth(azimuth)` in camera.rs
+- [x] Add `PrintFront`, `PrintLeft`, `PrintRight`, `PrintBack` to ViewPreset enum
 
 #### 2x2 Grid Snapshot
 
@@ -426,13 +426,13 @@ All maintain Z-up orientation (Vec3::Z in look_at_rh):
 +---------------+---------------+
 ```
 
-- [ ] **Test:** `--view print-grid` produces image with 4 quadrants
-- [ ] **Test:** grid dimensions correct (each quadrant half size)
-- [ ] **Test:** each quadrant matches individual print-* render
-- [ ] Implement grid composite using image crate
-- [ ] Add `PrintGrid` to ViewPreset enum
+- [x] **Test:** `--view print-grid` produces image with 4 quadrants
+- [x] **Test:** grid dimensions correct (each quadrant half size)
+- [x] **Test:** each quadrant has visible content
+- [x] Implement grid composite using image crate
+- [x] Add `PrintGrid` to ViewPreset enum
 
-**Acceptance:** All print-* views render with Z-up; grid shows 4 recognizable angles.
+**Acceptance:** All print-* views render with Z-up; grid shows 4 recognizable angles. ✓
 
 ---
 

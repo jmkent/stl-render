@@ -6,8 +6,8 @@ A fast, headless CLI tool to render STL files to PNG images.
 stl-render model.stl -o preview.png
 ```
 
-| | |
-|---|---|
+| 3DBenchy, Blue Grey, Print View                           | 3DBenchy, Tan, Print View                      |
+|-----------------------------------------------------------|------------------------------------------------|
 | ![3DBenchy Blue Grey](examples/benchy_print_bluegrey.png) | ![3DBenchy Tan](examples/benchy_print_tan.png) |
 
 <sub>Renders of [3DBenchy](https://www.3dbenchy.com) - the 3D printing benchmark model (public domain)</sub>
@@ -54,6 +54,7 @@ stl-render model.stl -o preview.png --view print --aa 4x --width 1024 --height 1
 |-------|-----------|--------------|
 | ![Front](examples/view_front.png) | ![Iso](examples/view_iso.png) | ![Print](examples/view_print.png) |
 
+**Standard views (Y-up):**
 ```bash
 --view front    # Looking at front face
 --view back     # Looking at back face  
@@ -62,10 +63,31 @@ stl-render model.stl -o preview.png --view print --aa 4x --width 1024 --height 1
 --view top      # Looking down from above
 --view bottom   # Looking up from below
 --view iso      # Isometric (45° azimuth, 35° elevation)
---view print    # Print bed view (Z-up, 30° tilt)
 ```
 
-The `print` view is designed for 3D printing - it keeps the Z axis vertical (as it would be on a print bed) while tilting slightly to show the top surface.
+**Print bed views (Z-up):**
+```bash
+--view print         # Print bed view (default print angle)
+--view print-front   # Print view from front
+--view print-left    # Print view from left
+--view print-right   # Print view from right
+--view print-back    # Print view from back
+--view print-grid    # 2x2 grid of all four print angles
+```
+
+The `print` views are designed for 3D printing - they keep the Z axis vertical (as it would be on a print bed) while tilting slightly to show the top surface.
+
+### Print Grid
+
+Generate a single image showing all four print angles:
+
+| Print Grid |
+|------------|
+| ![Print Grid](examples/benchy_print_grid.png) |
+
+```bash
+stl-render model.stl -o preview.png --view print-grid
+```
 
 ## Lighting Presets
 
@@ -82,6 +104,8 @@ The `print` view is designed for 3D printing - it keeps the Z axis vertical (as 
 ## More Examples
 
 See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
+- Print view presets and grid
+- Batch processing multiple files
 - Material colors (filament presets)
 - Background options
 - Anti-aliasing comparison
@@ -92,16 +116,17 @@ See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
 ## CLI Reference
 
 ```
-stl-render <INPUT> -o <OUTPUT> [OPTIONS]
+stl-render <INPUT>... -o <OUTPUT> [OPTIONS]
 
 Arguments:
-  <INPUT>   STL file path, or - for stdin
+  <INPUT>...  STL file(s) - supports multiple files
 
 Options:
-  -o, --output <PATH>           Output PNG path, or - for stdout
+  -o, --output <PATH>           Output PNG path or directory (use trailing / for directory)
       --width <PX>              Image width [default: 512]
       --height <PX>             Image height [default: 512]
-      --view <PRESET>           View: front|back|left|right|top|bottom|iso|print
+      --view <PRESET>           Single view preset
+      --views <LIST>            Multiple views (comma-separated), outputs to directory
       --azimuth <DEG>           Camera azimuth angle (conflicts with --view)
       --elevation <DEG>         Camera elevation angle (conflicts with --view)
       --padding <RATIO>         Padding around model [default: 0.08]
@@ -111,10 +136,15 @@ Options:
       --material-color <HEX>    Model color [default: #cccccc]
       --lighting <PRESET>       Lighting: flat|studio|technical [default: studio]
       --metadata <PATH>         Write render metadata JSON
+      --strict                  Abort on first error (default: continue processing)
       --quiet                   Suppress progress output
       --verbose                 Show progress info
   -h, --help                    Print help
   -V, --version                 Print version
+
+View presets:
+  front, back, left, right, top, bottom, iso
+  print, print-front, print-left, print-right, print-back, print-grid
 ```
 
 ## Exit Codes

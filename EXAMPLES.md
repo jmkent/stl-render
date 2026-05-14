@@ -47,7 +47,45 @@ stl-render model.stl -o preview.png --view iso
 stl-render model.stl -o preview.png --view print
 ```
 
-Available presets: `front`, `back`, `left`, `right`, `top`, `bottom`, `iso`, `print`
+**Standard presets (Y-up):** `front`, `back`, `left`, `right`, `top`, `bottom`, `iso`
+
+**Print presets (Z-up):** `print`, `print-front`, `print-left`, `print-right`, `print-back`, `print-grid`
+
+### Print View Angles
+
+All print views maintain Z-up orientation (model appears as it would on a print bed):
+
+| Front | Left | Right | Back |
+|-------|------|-------|------|
+| ![Print Front](examples/view_print_front.png) | ![Print Left](examples/view_print_left.png) | ![Print Right](examples/view_print_right.png) | ![Print Back](examples/view_print_back.png) |
+
+```bash
+stl-render model.stl -o preview.png --view print-front
+stl-render model.stl -o preview.png --view print-left
+stl-render model.stl -o preview.png --view print-right
+stl-render model.stl -o preview.png --view print-back
+```
+
+### Print Grid
+
+Generate all four print angles in a single 2x2 grid image:
+
+| Print Grid |
+|------------|
+| ![Print Grid](examples/benchy_print_grid.png) |
+
+```bash
+stl-render model.stl -o preview.png --view print-grid --width 1024 --height 1024
+```
+
+The grid layout is:
+```
++---------------+---------------+
+| print-front   | print-right   |
++---------------+---------------+
+| print-back    | print-left    |
++---------------+---------------+
+```
 
 ## Material Colors
 
@@ -155,6 +193,53 @@ stl-render model.stl -o preview.png --metadata info.json
 }
 ```
 
+## Batch Processing
+
+### Multiple Files
+
+Render multiple STL files to a directory:
+
+```bash
+# Render all STL files to output directory
+stl-render *.stl -o output/
+
+# Output naming: model.stl -> output/model.png
+```
+
+### Multiple Views
+
+Generate multiple views of a single model:
+
+```bash
+# Render front, back, and iso views
+stl-render model.stl -o output/ --views front,back,iso
+
+# Output naming: model.front.png, model.back.png, model.iso.png
+```
+
+### Multiple Files and Views
+
+Combine both for comprehensive documentation:
+
+```bash
+# Render all print angles for multiple models
+stl-render *.stl -o output/ --views print-front,print-left,print-right,print-back
+
+# Output: model1.print-front.png, model1.print-left.png, ...
+```
+
+### Error Handling
+
+By default, batch mode continues processing if one file fails:
+
+```bash
+# Continue on errors (default)
+stl-render *.stl -o output/
+
+# Abort on first error
+stl-render *.stl -o output/ --strict
+```
+
 ## Piping
 
 ```bash
@@ -187,4 +272,18 @@ stl-render model.stl -o preview.png \
     --lighting technical \
     --background solid \
     --background-color "#ffffff"
+
+# Print grid for product listing
+stl-render model.stl -o grid.png \
+    --view print-grid \
+    --material-color "#C19A6B" \
+    --aa 4x \
+    --width 1024 \
+    --height 1024
+
+# Batch render all angles for documentation
+stl-render model.stl -o docs/ \
+    --views front,back,left,right,top,print \
+    --material-color "#708090" \
+    --aa 2x
 ```
