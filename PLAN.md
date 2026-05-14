@@ -10,7 +10,8 @@ stl-render input.stl -o preview.png --view iso --width 512 --height 512
 
 ## Scope
 
-- Input: STL (binary and ASCII), OBJ, and 3MF, up to 500MB+
+- Input: STL (binary and ASCII), OBJ, and 3MF
+- Large-file handling: designed and tested for STL up to 500MB+; OBJ and 3MF are buffered in memory
 - Output: PNG or animated GIF
 - Rendering: software rasterizer, headless
 - Packaging: static binary, no runtime deps
@@ -666,41 +667,122 @@ on:
 
 ---
 
-## Deferred Work
+## Known Issues
 
-Items considered but not implemented in the current milestone scope:
+These items came out of the v1 maintainability review. They are concrete follow-up tasks before treating the project as a narrow stable Rust library API plus supported CLI.
 
-### Degenerate Geometry Handling
+### KI1: Public API Surface
+- [ ] Narrow `src/lib.rs` exports to the stable embedding API only
+- [ ] Make parser, renderer, output, and CLI implementation modules private or `pub(crate)`
+- [ ] Keep stable exports focused on `RenderConfig`, `RenderConfigBuilder`, `ViewPreset`, `ViewConfig`, `RenderMetadata`, `RenderError`, `render()`, and `render_to_image()`
+- [ ] Decide whether `MeshReader`, `Triangle`, and `BoundingBox` are stable public API or internal implementation details
+- [ ] Add/adjust compile tests proving an external crate can use the intended API without importing internal modules
+- [ ] Update rustdoc examples to match the narrowed API
+
+### KI2: Render Configuration Validation
+- [ ] Add central `RenderConfig::validate()` used by CLI parsing and public render entrypoints
+- [ ] Reject zero width/height before framebuffer or camera setup
+- [ ] Use checked arithmetic for anti-aliased render dimensions and framebuffer allocation sizes
+- [ ] Reject invalid animation settings such as `frames = 0`
+- [ ] Validate padding, frame delay, and other numeric options with clear config errors
+- [ ] Add tests for invalid dimensions, overflow-sized dimensions, invalid padding, and zero-frame GIFs
+
+### KI3: Batch Error Aggregation
+- [ ] Track aggregate batch exit status by severity instead of returning the first error
+- [ ] Ensure output errors produce exit code 3 even if earlier inputs produced exit code 2
+- [ ] Move per-output parent directory creation into the per-file result path where practical
+- [ ] Add tests for mixed input and output failures, strict mode, and recursive batch failures
+
+### KI4: 3MF Compatibility Scope
+- [ ] Document the current 3MF subset if v1 intentionally supports mesh extraction only
+- [ ] Decide whether v1 needs real 3MF build-scene rendering
+- [ ] If required, parse `<build>` items, object IDs, transforms, components, and units
+- [ ] Render only referenced build items when build data exists
+- [ ] Add fixtures and tests for transformed build items, component instances, unreferenced objects, and multiple object IDs
+
+### KI5: OBJ Compatibility Scope
+- [ ] Document that OBJ is buffered in memory and not covered by the large-STL memory guarantees
+- [ ] Decide whether to support relative negative face indices
+- [ ] Decide whether to support line continuations and other common OBJ variants
+- [ ] Improve format detection for OBJ files with long comments or metadata before geometry
+- [ ] Add tests for negative indices, long headers, comments before geometry, and unsupported syntax diagnostics
+
+### KI6: User-Facing Terminology and Documentation
+- [ ] Replace stale STL-only wording in CLI help, crate description, README, EXAMPLES, and ARCHITECTURE
+- [ ] Rename or wrap `RenderError::Stl` so OBJ and 3MF failures are reported as mesh/input errors
+- [ ] Clarify that animated GIF output is enabled by `--animate`, not by the `.gif` extension alone
+- [ ] Document that large-file performance claims apply to STL only
+- [ ] Add examples that render the entire `fixtures` directory recursively across STL, OBJ, and 3MF inputs
+
+### KI7: Release and Repository Hygiene
+- [x] Stop ignoring `Cargo.lock`
+- [ ] Commit `Cargo.lock` so `cargo check --locked`, release builds, and publish dry-runs are reproducible
+- [ ] Commit prepared `.github/` workflows and `CHANGELOG.md` intentionally
+- [ ] Update `Cargo.toml` version and release metadata before tagging
+- [ ] Run `cargo package --list` and `cargo publish --dry-run --locked`
+- [ ] Run the release workflow on a test branch before tagging
+
+### KI8: Animated GIF Memory Use
+- [ ] Replace all-frames-in-memory GIF generation with a streaming encoder path
+- [ ] Avoid cloning full frame buffers during GIF encoding where possible
+- [ ] Add a stress test or benchmark for high-resolution, multi-frame GIF generation
+- [ ] Document practical memory expectations for GIF output
+
+### KI9: Rasterizer Robustness
+- [ ] Decide whether unconditional backface culling should remain the default
+- [ ] Add a render option or internal path for double-sided rendering if inconsistent winding is common
+- [ ] Document current clipping behavior for triangles crossing near/far bounds
+- [ ] Add tests for inconsistent winding, near/far clipping, and partially clipped triangles
+
+### KI10: Degenerate Geometry Handling
+- [ ] Define renderer policy for zero-area triangles, duplicate vertices, NaN coordinates, and infinite coordinates
 - [ ] Skip zero-area triangles silently
-- [ ] Skip NaN/Inf coordinates with warning
-- [ ] Handle models with zero valid triangles after filtering
+- [ ] Reject or skip NaN/Inf coordinates with a clear diagnostic policy
+- [ ] Track how many triangles are filtered and expose that count in verbose output or metadata if useful
+- [ ] Return a clear input error when a model has no valid triangles after filtering
+- [ ] Add fixtures for zero-area triangles, duplicate vertices, NaN coordinates, Inf coordinates, and all-filtered geometry
+- [ ] Add parser-level tests that malformed numeric data is rejected consistently for STL, OBJ, and 3MF
+- [ ] Add render-level tests that mixed valid/degenerate geometry still produces an image without panics
+- [ ] Add CLI tests for all-filtered geometry and verify exit code 2 with a clear message
 
-### Additional Error Cases  
-- [ ] Exit code 3 for unwritable output file (currently may panic or produce unclear error)
-
-These could be added in a future robustness pass if real-world usage reveals demand.
+### KI11: Output Error Handling
+- [ ] Audit every output path for unwritable files, unwritable directories, broken pipes, and unsupported stdout combinations
+- [ ] Ensure output failures return `RenderError::Output` and exit code 3 instead of panicking or reporting input/config errors
+- [ ] Ensure metadata write failures are reported consistently with image/GIF write failures
+- [ ] Ensure batch mode prints one concise failed conversion line for each output failure
+- [ ] Add CLI tests for unwritable output file, unwritable output directory, invalid metadata path, and batch output-directory failures
+- [ ] Add tests proving non-strict batch mode continues after per-file output failures where possible
+- [ ] Add tests proving strict batch mode aborts on the first output failure with exit code 3
 
 ---
 
-## Golden Image Tests
+## Visual Regression Strategy
 
-Store reference PNGs in `fixtures/golden/`. Compare with tolerance for CI.
+The project has reached stable image generation without relying on committed golden PNGs. Current tests already cover the higher-value invariants for day-to-day development: deterministic output bytes, image dimensions, visible content, alpha/background behavior, lighting differences, material colors, print-grid composition, batch traversal, and animated GIF frame behavior.
 
-| Fixture | Views | Notes |
-|---------|-------|-------|
-| cube.stl | iso, print, print-grid | Basic geometry, 12 triangles |
-| sphere.stl | iso, print | Curved surface shading, 1280 triangles |
-| cylinder.stl | front, top, print | Mixed flat/curved surfaces |
-| tall_column.stl | front, print | Aspect ratio handling (tall) |
-| flat_tile.stl | top, print | Near-planar model (wide) |
-| long_beam.stl | front, print | Elongated geometry |
-| single_triangle.stl | front | Minimal geometry |
+Full golden-image comparison is still useful, but it should not be a default v1 CI requirement. Pixel fixtures are expensive to maintain, produce noisy diffs for intentional renderer changes, and can make small dependency or platform changes look like regressions even when the rendered output remains acceptable.
 
-Golden images generated once rendering is stable. Workflow:
-1. Render all fixtures: `stl-render fixtures/*.stl -o fixtures/golden/ --views front,iso,print`
-2. Manually verify images look correct
-3. Commit as reference
-4. CI compares new renders against reference (pixel diff with tolerance)
+### Current Approach
+- [x] Prefer semantic image assertions in unit and integration tests
+- [x] Verify deterministic output for identical input/configuration
+- [x] Verify rendered images have expected dimensions and visible content
+- [x] Verify backgrounds, alpha, material colors, lighting presets, and grid layout with targeted pixel assertions
+- [x] Keep generated example images in `examples/` for documentation and manual inspection
+
+### Optional Release Gate
+- [ ] Add a non-default visual regression script under `tools/` if repeated manual release checks become expensive
+- [ ] Render a small representative matrix: `cube`, `sphere`, `flat_tile`, `long_beam`, `print-grid`, and one animated GIF
+- [ ] Include STL, OBJ, and 3MF equivalents only where format parity is the behavior under test
+- [ ] Compare image dimensions, non-transparent bounds, visible-pixel counts, and perceptual/hash summaries before considering full pixel diffs
+- [ ] Store generated release-check outputs outside committed fixtures by default, for example under `target/visual-regression/`
+- [ ] Commit golden PNGs only if a future renderer-stability requirement justifies the review and maintenance cost
+
+### Test Plan If Golden Images Are Added Later
+- [ ] Generate baselines from a known release tag, not from an arbitrary working tree
+- [ ] Keep the golden matrix intentionally small to avoid blocking normal renderer evolution
+- [ ] Use tolerance-based comparison and record the diff artifact on failure
+- [ ] Run the golden-image job manually or on release branches before enabling it on every PR
+- [ ] Document the workflow for intentionally accepting renderer changes
 
 ---
 

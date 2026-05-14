@@ -1,6 +1,5 @@
 # Rust
 /target/
-Cargo.lock
 
 # Python (fixture generator)
 tools/fixtures/.venv/
