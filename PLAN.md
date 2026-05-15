@@ -217,7 +217,8 @@ fn apply_watermark(image: &mut RgbaImage, watermark: &RgbaImage, config: &Waterm
 
 **Outstanding items:**
 - [ ] Apply `--color-map` overrides during rendering (parsing implemented, application deferred)
-- [ ] Test fixtures: `colored_cube.3mf`, `gradient.3mf`, `partial_colors.3mf`
+- [x] Test fixture: `colored_cube.3mf` (6-face colored cube)
+- [ ] Test fixtures: `gradient.3mf`, `partial_colors.3mf`
 - [ ] Integration tests for colored 3MF rendering
 
 ---

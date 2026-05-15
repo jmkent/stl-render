@@ -52,24 +52,34 @@ stl-render assembly.3mf -o preview.png --view iso
 
 ### 3MF Color Support
 
-3MF files with embedded colors are rendered automatically:
+3MF files with embedded colorgroups render per-face and per-vertex colors automatically:
+
+| Colored Cube (static) | Colored Cube (animated) |
+|-----------------------|-------------------------|
+| ![Colored Cube](examples/format_3mf_colored.png) | ![Colored Cube Animated](examples/format_3mf_colored.gif) |
 
 ```bash
 # Render with embedded mesh colors (default)
 stl-render colored_model.3mf -o preview.png
 
+# Animated rotation showing all colored faces
+stl-render colored_model.3mf -o preview.gif --animate --frames 24
+
 # Ignore mesh colors, use uniform material color
 stl-render colored_model.3mf -o preview.png --no-mesh-colors --material-color tan
 
 # List colors in a 3MF file
-stl-render model.3mf --list-colors
+stl-render model.3mf -o /dev/null --list-colors
 ```
 
 Output of `--list-colors`:
 ```text
-0: #ff0000 (red)
-1: #00ff00 (green)
-2: #0000ff (blue)
+  0: #ff0000 (alpha: 255)
+  1: #00ff00 (alpha: 255)
+  2: #0000ff (alpha: 255)
+  3: #ffff00 (alpha: 255)
+  4: #ff00ff (alpha: 255)
+  5: #00ffff (alpha: 255)
 ```
 
 ## 3DBenchy
