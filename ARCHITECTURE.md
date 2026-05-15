@@ -24,10 +24,41 @@ The 3MF parser (`src/tmf3/`) supports the full Core specification scene graph:
 - **Component references** (`<components><component>`) with nested transforms
 - **Unit metadata** (`<model unit="...">`) - mm, cm, inch, foot, micron
 - **Cycle detection** for component references (100-depth limit)
+- **Colorgroups** (`<colorgroup>`) with per-face and per-vertex colors
 
 Transform matrices are accumulated through the hierarchy and applied to vertices during parsing. Multi-object files render all referenced objects with correct positioning.
 
-**Not supported:** Materials extension (colors, textures). Renders use `--material-color`.
+### 3MF Color Support
+
+The parser supports the 3MF Materials extension for embedded colors:
+
+```xml
+<resources>
+  <colorgroup id="1">
+    <color color="#FF0000"/>  <!-- index 0: red -->
+    <color color="#00FF00"/>  <!-- index 1: green -->
+  </colorgroup>
+  <object id="2" pid="1" pindex="0">  <!-- default color: index 0 -->
+    <mesh>
+      <triangles>
+        <!-- Per-vertex colors via p1/p2/p3 -->
+        <triangle v1="0" v2="1" v3="2" pid="1" p1="0" p2="1" p3="0"/>
+      </triangles>
+    </mesh>
+  </object>
+</resources>
+```
+
+**Color resolution:**
+1. Triangle `pid` references a `<colorgroup>` by ID
+2. Triangle `p1`/`p2`/`p3` are 0-based indices into the colorgroup (per-vertex)
+3. If triangle lacks `pid`, object default `pid`/`pindex` applies
+4. Colors are sRGB hex: `#RRGGBB` or `#RRGGBBAA`
+
+**Rendering:**
+- Per-vertex colors are interpolated using barycentric coordinates (sRGB space per 3MF spec)
+- `--no-mesh-colors` forces uniform material color instead
+- `--list-colors` prints the color palette and exits
 
 ### Format Limitations
 
@@ -264,6 +295,7 @@ impl StlReader {
 pub struct Triangle {
     pub vertices: [[f32; 3]; 3],
     pub normal: [f32; 3],
+    pub vertex_colors: Option<[[u8; 4]; 3]>,  // Per-vertex RGBA (3MF colorgroups)
 }
 ```
 
@@ -369,11 +401,16 @@ Rasterization algorithm:
 2. Clip against near plane
 3. Compute screen-space bounding box
 4. For each pixel in bbox:
-   - Compute barycentric coordinates
+   - Compute barycentric coordinates (u, v, w)
    - If inside (all >= 0): interpolate depth
-   - If depth < buffer: compute shading, write color
+   - If depth < buffer:
+     - If vertex colors present: interpolate colors using barycentric coords
+     - Apply lighting factor to base color
+     - Write to color buffer
 
-Shading: `color = material_color * max(0, dot(normal, light_dir))`
+Shading: `color = base_color * lighting_factor`
+- `base_color` = interpolated vertex color or material_color
+- `lighting_factor` = ambient + diffuse based on normal and light direction
 
 ### output.rs
 
@@ -451,6 +488,8 @@ impl MeshReader {
     pub fn open(path: &Path) -> Result<Self, StlError>;
     pub fn from_reader<R: Read>(reader: R) -> Result<Self, StlError>;
     pub fn triangles(&self) -> Result<MeshTriangleIter<'_>, StlError>;
+    pub fn has_colors(&self) -> bool;           // True for 3MF with colorgroups
+    pub fn color_palette(&self) -> &[[u8; 4]];  // Empty for STL/OBJ
 }
 
 /// Public API functions
@@ -480,6 +519,8 @@ pub enum Unit3mf {
 pub struct Parse3mfResult {
     pub triangles: Vec<Triangle>,
     pub unit: Unit3mf,
+    pub color_palette: Vec<[u8; 4]>,  // Extracted from colorgroups
+    pub has_colors: bool,              // True if any triangles have vertex colors
 }
 
 pub fn parse_3mf<R: Read + Seek>(reader: R) -> Result<Parse3mfResult, StlError>;

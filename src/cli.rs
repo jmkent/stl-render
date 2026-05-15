@@ -38,6 +38,9 @@ pub enum CliError {
     #[error("invalid background '{0}' (expected transparent or solid)")]
     InvalidBackground(String),
 
+    #[error("invalid color map '{0}' (expected format: 0:#ff0000,1:#00ff00)")]
+    InvalidColorMap(String),
+
     #[error("invalid lighting preset '{0}' (expected flat, studio, or technical)")]
     InvalidLighting(String),
 
@@ -113,6 +116,18 @@ pub struct Args {
     /// Material color (hex or preset: tan, blue-grey, white, black, red, orange, green, blue, grey/gray, silver)
     #[arg(long, default_value = "#cccccc")]
     pub material_color: String,
+
+    /// Ignore embedded mesh colors, use --material-color instead
+    #[arg(long)]
+    pub no_mesh_colors: bool,
+
+    /// Override specific palette colors (format: "0:#ff0000,2:#00ff00")
+    #[arg(long)]
+    pub color_map: Option<String>,
+
+    /// List colors in file and exit (3MF only)
+    #[arg(long)]
+    pub list_colors: bool,
 
     /// Lighting preset: flat, studio, technical
     #[arg(long, default_value = "studio")]
@@ -267,6 +282,8 @@ pub struct RenderConfig {
     pub background_color: [u8; 3],
     /// Material color RGB
     pub material_color: [u8; 3],
+    /// Use embedded mesh colors when present (3MF colorgroups)
+    pub use_mesh_colors: bool,
     /// Lighting preset
     pub lighting: LightingPreset,
     /// Optional path to write metadata JSON
@@ -355,6 +372,7 @@ pub struct RenderConfigBuilder {
     background: Background,
     background_color: [u8; 3],
     material_color: [u8; 3],
+    use_mesh_colors: bool,
     lighting: LightingPreset,
     metadata_path: Option<PathBuf>,
     quiet: bool,
@@ -374,6 +392,7 @@ impl RenderConfigBuilder {
     /// - Transparent background
     /// - Light gray material (#cccccc)
     /// - Studio lighting
+    /// - Use mesh colors when present
     pub fn new(input: impl Into<PathBuf>, output: impl Into<PathBuf>) -> Self {
         Self {
             input: input.into(),
@@ -386,6 +405,7 @@ impl RenderConfigBuilder {
             background: Background::Transparent,
             background_color: [255, 255, 255],
             material_color: [204, 204, 204],
+            use_mesh_colors: true,
             lighting: LightingPreset::Studio,
             metadata_path: None,
             quiet: false,
@@ -500,6 +520,12 @@ impl RenderConfigBuilder {
         self
     }
 
+    /// Disable embedded mesh colors (use material_color instead).
+    pub fn no_mesh_colors(mut self) -> Self {
+        self.use_mesh_colors = false;
+        self
+    }
+
     /// Build the [`RenderConfig`].
     pub fn build(self) -> RenderConfig {
         RenderConfig {
@@ -513,6 +539,7 @@ impl RenderConfigBuilder {
             background: self.background,
             background_color: self.background_color,
             material_color: self.material_color,
+            use_mesh_colors: self.use_mesh_colors,
             lighting: self.lighting,
             metadata_path: self.metadata_path,
             quiet: self.quiet,
@@ -544,6 +571,8 @@ pub struct BatchConfig {
     pub background: Background,
     pub background_color: [u8; 3],
     pub material_color: [u8; 3],
+    pub use_mesh_colors: bool,
+    pub color_map: ColorMap,
     pub lighting: LightingPreset,
     pub metadata_path: Option<PathBuf>,
     pub quiet: bool,
@@ -553,6 +582,7 @@ pub struct BatchConfig {
     pub animate: bool,
     pub frames: u32,
     pub frame_delay: u16,
+    pub list_colors: bool,
 }
 
 impl BatchConfig {
@@ -583,6 +613,7 @@ impl BatchConfig {
                     background: self.background,
                     background_color: self.background_color,
                     material_color: self.material_color,
+                    use_mesh_colors: self.use_mesh_colors,
                     lighting: self.lighting,
                     metadata_path,
                     quiet: self.quiet,
@@ -756,6 +787,12 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
     let material_color = parse_color(&args.material_color)?;
     let lighting = parse_lighting(&args.lighting)?;
 
+    let color_map = if let Some(ref spec) = args.color_map {
+        parse_color_map(spec)?
+    } else {
+        ColorMap::new()
+    };
+
     Ok(BatchConfig {
         inputs,
         output_dir,
@@ -768,6 +805,8 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         background,
         background_color,
         material_color,
+        use_mesh_colors: !args.no_mesh_colors,
+        color_map,
         lighting,
         metadata_path: args.metadata,
         quiet: args.quiet,
@@ -777,6 +816,7 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         animate: args.animate,
         frames: args.frames,
         frame_delay: args.frame_delay,
+        list_colors: args.list_colors,
     })
 }
 
@@ -968,6 +1008,34 @@ fn parse_color(s: &str) -> Result<[u8; 3], CliError> {
     }
 }
 
+/// Color map type: maps palette index to RGBA color
+pub type ColorMap = std::collections::HashMap<u32, [u8; 4]>;
+
+/// Parse a color map specification: "0:#ff0000,2:#00ff00"
+pub fn parse_color_map(spec: &str) -> Result<ColorMap, CliError> {
+    let mut map = ColorMap::new();
+    if spec.trim().is_empty() {
+        return Ok(map);
+    }
+
+    for pair in spec.split(',') {
+        let pair = pair.trim();
+        let (idx_str, color_str) = pair
+            .split_once(':')
+            .ok_or_else(|| CliError::InvalidColorMap(pair.to_string()))?;
+
+        let idx: u32 = idx_str
+            .trim()
+            .parse()
+            .map_err(|_| CliError::InvalidColorMap(pair.to_string()))?;
+
+        let rgb = parse_hex_color(color_str.trim())?;
+        map.insert(idx, [rgb[0], rgb[1], rgb[2], 255]);
+    }
+
+    Ok(map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1077,6 +1145,21 @@ mod tests {
             parse_hex_color("invalid"),
             Err(CliError::InvalidColor(_))
         ));
+    }
+
+    #[test]
+    fn test_parse_color_map() {
+        let map = parse_color_map("0:#ff0000,2:#00ff00").unwrap();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&0), Some(&[255, 0, 0, 255]));
+        assert_eq!(map.get(&2), Some(&[0, 255, 0, 255]));
+
+        let empty = parse_color_map("").unwrap();
+        assert!(empty.is_empty());
+
+        // Invalid formats
+        assert!(parse_color_map("invalid").is_err());
+        assert!(parse_color_map("0:#invalid").is_err());
     }
 
     #[test]
@@ -1357,6 +1440,8 @@ mod tests {
             background: Background::Transparent,
             background_color: [255, 255, 255],
             material_color: [204, 204, 204],
+            use_mesh_colors: true,
+            color_map: ColorMap::new(),
             lighting: LightingPreset::Studio,
             metadata_path: None,
             quiet: false,
@@ -1366,6 +1451,7 @@ mod tests {
             animate: false,
             frames: 16,
             frame_delay: 100,
+            list_colors: false,
         };
 
         let outputs: Vec<_> = config.iter_jobs().map(|job| job.output).collect();

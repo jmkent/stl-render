@@ -104,6 +104,7 @@ pub fn parse_obj<R: Read>(reader: R) -> Result<Vec<Triangle>, StlError> {
                     triangles.push(Triangle {
                         vertices: [v0, v1, v2],
                         normal: normal.to_array(),
+                        vertex_colors: None,
                     });
                 }
             }

@@ -1,7 +1,7 @@
 use std::fs;
 use std::process::ExitCode;
 
-use stl_render::{OutputError, RenderError, cli};
+use stl_render::{MeshReader, OutputError, RenderError, cli};
 
 fn main() -> ExitCode {
     match run() {
@@ -15,6 +15,11 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), RenderError> {
     let batch_config = cli::parse_args()?;
+
+    // Handle --list-colors: print color palette and exit
+    if batch_config.list_colors {
+        return list_colors(&batch_config);
+    }
 
     // Create output directory if needed
     if let Some(ref dir) = batch_config.output_dir
@@ -109,5 +114,34 @@ fn ensure_parent_dir(path: &std::path::Path) -> Result<(), RenderError> {
     {
         fs::create_dir_all(parent).map_err(|e| RenderError::Output(OutputError::Io(e)))?;
     }
+    Ok(())
+}
+
+fn list_colors(batch_config: &cli::BatchConfig) -> Result<(), RenderError> {
+    if batch_config.inputs.is_empty() {
+        return Err(RenderError::Config("no input files specified".into()));
+    }
+
+    for input in &batch_config.inputs {
+        let reader = MeshReader::open(&input.path)?;
+
+        if batch_config.inputs.len() > 1 {
+            println!("{}:", input.path.display());
+        }
+
+        if !reader.has_colors() {
+            println!("  (no colors)");
+            continue;
+        }
+
+        let palette = reader.color_palette();
+        for (i, color) in palette.iter().enumerate() {
+            println!(
+                "  {}: #{:02x}{:02x}{:02x} (alpha: {})",
+                i, color[0], color[1], color[2], color[3]
+            );
+        }
+    }
+
     Ok(())
 }

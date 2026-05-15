@@ -49,6 +49,10 @@ impl Unit3mf {
 pub struct Parse3mfResult {
     pub triangles: Vec<Triangle>,
     pub unit: Unit3mf,
+    /// Color palette extracted from colorgroups (for --list-colors).
+    pub color_palette: Vec<[u8; 4]>,
+    /// True if any triangles have vertex colors assigned.
+    pub has_colors: bool,
 }
 
 /// Parse a 3MF file and return triangles with unit info.
@@ -97,9 +101,23 @@ fn find_model_file<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<S
 
 // Internal types for scene graph
 
+struct ColorGroup {
+    colors: Vec<[u8; 4]>,
+}
+
+struct TriangleData {
+    v1: usize,
+    v2: usize,
+    v3: usize,
+    pid: Option<u32>,
+    p1: Option<u32>,
+    p2: Option<u32>,
+    p3: Option<u32>,
+}
+
 struct Mesh3mf {
     vertices: Vec<[f32; 3]>,
-    triangles: Vec<[usize; 3]>,
+    triangles: Vec<TriangleData>,
 }
 
 struct Component3mf {
@@ -110,6 +128,8 @@ struct Component3mf {
 struct Object3mf {
     mesh: Option<Mesh3mf>,
     components: Vec<Component3mf>,
+    default_pid: Option<u32>,
+    default_pindex: Option<u32>,
 }
 
 struct BuildItem {
@@ -121,14 +141,24 @@ struct Model3mf {
     unit: Unit3mf,
     objects: HashMap<u32, Object3mf>,
     build_items: Vec<BuildItem>,
+    colorgroups: HashMap<u32, ColorGroup>,
 }
 
 fn parse_model_xml(xml: &str) -> Result<Parse3mfResult, StlError> {
     let model = parse_model_structure(xml)?;
-    let triangles = resolve_scene_graph(&model)?;
+    let (triangles, has_colors) = resolve_scene_graph(&model)?;
+
+    // Collect color palette from all colorgroups
+    let mut color_palette = Vec::new();
+    for colorgroup in model.colorgroups.values() {
+        color_palette.extend_from_slice(&colorgroup.colors);
+    }
+
     Ok(Parse3mfResult {
         triangles,
         unit: model.unit,
+        color_palette,
+        has_colors,
     })
 }
 
@@ -139,13 +169,20 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
     let mut unit = Unit3mf::default();
     let mut objects: HashMap<u32, Object3mf> = HashMap::new();
     let mut build_items: Vec<BuildItem> = Vec::new();
+    let mut colorgroups: HashMap<u32, ColorGroup> = HashMap::new();
 
     // Current parse state
     let mut current_object_id: Option<u32> = None;
+    let mut current_object_pid: Option<u32> = None;
+    let mut current_object_pindex: Option<u32> = None;
     let mut current_mesh: Option<Mesh3mf> = None;
     let mut current_components: Vec<Component3mf> = Vec::new();
     let mut current_vertices: Vec<[f32; 3]> = Vec::new();
-    let mut current_triangles: Vec<[usize; 3]> = Vec::new();
+    let mut current_triangles: Vec<TriangleData> = Vec::new();
+
+    // Colorgroup parsing state
+    let mut current_colorgroup_id: Option<u32> = None;
+    let mut current_colors: Vec<[u8; 4]> = Vec::new();
 
     let mut in_object = false;
     let mut in_mesh = false;
@@ -153,6 +190,7 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
     let mut in_triangles_elem = false;
     let mut in_components = false;
     let mut in_build = false;
+    let mut in_colorgroup = false;
 
     loop {
         match reader.read_event() {
@@ -171,12 +209,19 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
                     b"object" => {
                         in_object = true;
                         current_object_id = None;
+                        current_object_pid = None;
+                        current_object_pindex = None;
                         current_mesh = None;
                         current_components.clear();
 
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"id" {
-                                current_object_id = Some(parse_u32_attr(&attr.value)?);
+                            match attr.key.as_ref() {
+                                b"id" => current_object_id = Some(parse_u32_attr(&attr.value)?),
+                                b"pid" => current_object_pid = Some(parse_u32_attr(&attr.value)?),
+                                b"pindex" => {
+                                    current_object_pindex = Some(parse_u32_attr(&attr.value)?)
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -197,6 +242,17 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
                     b"build" => {
                         in_build = true;
                     }
+                    b"colorgroup" => {
+                        in_colorgroup = true;
+                        current_colorgroup_id = None;
+                        current_colors.clear();
+
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"id" {
+                                current_colorgroup_id = Some(parse_u32_attr(&attr.value)?);
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -209,8 +265,8 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
                         current_vertices.push(vertex);
                     }
                     b"triangle" if in_triangles_elem => {
-                        let (v1, v2, v3) = parse_triangle_indices(&e)?;
-                        current_triangles.push([v1, v2, v3]);
+                        let tri_data = parse_triangle_data(&e)?;
+                        current_triangles.push(tri_data);
                     }
                     b"component" if in_components => {
                         let component = parse_component(&e)?;
@@ -219,6 +275,11 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
                     b"item" if in_build => {
                         let item = parse_build_item(&e)?;
                         build_items.push(item);
+                    }
+                    b"color" if in_colorgroup => {
+                        if let Some(color) = parse_color(&e) {
+                            current_colors.push(color);
+                        }
                     }
                     _ => {}
                 }
@@ -246,11 +307,24 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
                                 Object3mf {
                                     mesh: current_mesh.take(),
                                     components: std::mem::take(&mut current_components),
+                                    default_pid: current_object_pid,
+                                    default_pindex: current_object_pindex,
                                 },
                             );
                         }
                     }
                     b"build" => in_build = false,
+                    b"colorgroup" => {
+                        in_colorgroup = false;
+                        if let Some(id) = current_colorgroup_id {
+                            colorgroups.insert(
+                                id,
+                                ColorGroup {
+                                    colors: std::mem::take(&mut current_colors),
+                                },
+                            );
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -270,11 +344,13 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
         unit,
         objects,
         build_items,
+        colorgroups,
     })
 }
 
-fn resolve_scene_graph(model: &Model3mf) -> Result<Vec<Triangle>, StlError> {
+fn resolve_scene_graph(model: &Model3mf) -> Result<(Vec<Triangle>, bool), StlError> {
     let mut triangles = Vec::new();
+    let mut has_colors = false;
 
     if model.build_items.is_empty() {
         // No build section: render all objects at origin (identity transform)
@@ -283,7 +359,9 @@ fn resolve_scene_graph(model: &Model3mf) -> Result<Vec<Triangle>, StlError> {
                 object,
                 Mat4::IDENTITY,
                 &model.objects,
+                &model.colorgroups,
                 &mut triangles,
+                &mut has_colors,
                 0,
             )?;
         }
@@ -295,14 +373,16 @@ fn resolve_scene_graph(model: &Model3mf) -> Result<Vec<Triangle>, StlError> {
                     object,
                     item.transform,
                     &model.objects,
+                    &model.colorgroups,
                     &mut triangles,
+                    &mut has_colors,
                     0,
                 )?;
             }
         }
     }
 
-    Ok(triangles)
+    Ok((triangles, has_colors))
 }
 
 const MAX_COMPONENT_DEPTH: u32 = 100;
@@ -311,7 +391,9 @@ fn collect_object_triangles(
     object: &Object3mf,
     transform: Mat4,
     all_objects: &HashMap<u32, Object3mf>,
+    colorgroups: &HashMap<u32, ColorGroup>,
     triangles: &mut Vec<Triangle>,
+    has_colors: &mut bool,
     depth: u32,
 ) -> Result<(), StlError> {
     if depth > MAX_COMPONENT_DEPTH {
@@ -322,8 +404,8 @@ fn collect_object_triangles(
 
     // Collect triangles from this object's mesh
     if let Some(mesh) = &object.mesh {
-        for tri_indices in &mesh.triangles {
-            let [v1, v2, v3] = *tri_indices;
+        for tri_data in &mesh.triangles {
+            let (v1, v2, v3) = (tri_data.v1, tri_data.v2, tri_data.v3);
 
             if v1 >= mesh.vertices.len() || v2 >= mesh.vertices.len() || v3 >= mesh.vertices.len() {
                 return Err(StlError::InvalidFormat(format!(
@@ -346,9 +428,22 @@ fn collect_object_triangles(
                 Vec3::from_array(p2),
             );
 
+            // Resolve vertex colors from colorgroups
+            let vertex_colors = resolve_triangle_colors(
+                tri_data,
+                object.default_pid,
+                object.default_pindex,
+                colorgroups,
+            );
+
+            if vertex_colors.is_some() {
+                *has_colors = true;
+            }
+
             triangles.push(Triangle {
                 vertices: [p0, p1, p2],
                 normal: normal.to_array(),
+                vertex_colors,
             });
         }
     }
@@ -362,13 +457,47 @@ fn collect_object_triangles(
                 ref_object,
                 combined_transform,
                 all_objects,
+                colorgroups,
                 triangles,
+                has_colors,
                 depth + 1,
             )?;
         }
     }
 
     Ok(())
+}
+
+/// Resolve vertex colors for a triangle from colorgroups.
+fn resolve_triangle_colors(
+    tri_data: &TriangleData,
+    default_pid: Option<u32>,
+    default_pindex: Option<u32>,
+    colorgroups: &HashMap<u32, ColorGroup>,
+) -> Option<[[u8; 4]; 3]> {
+    // Use triangle's pid or fall back to object's default
+    let pid = tri_data.pid.or(default_pid)?;
+
+    let colorgroup = colorgroups.get(&pid)?;
+    if colorgroup.colors.is_empty() {
+        return None;
+    }
+
+    // Resolve per-vertex colors (p1, p2, p3) or use default pindex
+    let resolve_index = |p: Option<u32>| -> [u8; 4] {
+        let idx = p.or(default_pindex).unwrap_or(0) as usize;
+        if idx < colorgroup.colors.len() {
+            colorgroup.colors[idx]
+        } else {
+            colorgroup.colors[0]
+        }
+    };
+
+    Some([
+        resolve_index(tri_data.p1),
+        resolve_index(tri_data.p2),
+        resolve_index(tri_data.p3),
+    ])
 }
 
 fn transform_point(point: [f32; 3], transform: Mat4) -> [f32; 3] {
@@ -487,27 +616,77 @@ fn parse_vertex(e: &quick_xml::events::BytesStart<'_>) -> Result<[f32; 3], StlEr
     }
 }
 
-fn parse_triangle_indices(
+fn parse_triangle_data(
     e: &quick_xml::events::BytesStart<'_>,
-) -> Result<(usize, usize, usize), StlError> {
+) -> Result<TriangleData, StlError> {
     let mut v1: Option<usize> = None;
     let mut v2: Option<usize> = None;
     let mut v3: Option<usize> = None;
+    let mut pid: Option<u32> = None;
+    let mut p1: Option<u32> = None;
+    let mut p2: Option<u32> = None;
+    let mut p3: Option<u32> = None;
 
     for attr in e.attributes().flatten() {
         match attr.key.as_ref() {
             b"v1" => v1 = Some(parse_usize_attr(&attr.value)?),
             b"v2" => v2 = Some(parse_usize_attr(&attr.value)?),
             b"v3" => v3 = Some(parse_usize_attr(&attr.value)?),
+            b"pid" => pid = Some(parse_u32_attr(&attr.value)?),
+            b"p1" => p1 = Some(parse_u32_attr(&attr.value)?),
+            b"p2" => p2 = Some(parse_u32_attr(&attr.value)?),
+            b"p3" => p3 = Some(parse_u32_attr(&attr.value)?),
             _ => {}
         }
     }
 
     match (v1, v2, v3) {
-        (Some(v1), Some(v2), Some(v3)) => Ok((v1, v2, v3)),
+        (Some(v1), Some(v2), Some(v3)) => Ok(TriangleData {
+            v1,
+            v2,
+            v3,
+            pid,
+            p1,
+            p2,
+            p3,
+        }),
         _ => Err(StlError::InvalidFormat(
             "triangle element missing v1, v2, or v3 attribute".into(),
         )),
+    }
+}
+
+/// Parse a color element from a colorgroup: <color color="#RRGGBB"/> or <color color="#RRGGBBAA"/>
+fn parse_color(e: &quick_xml::events::BytesStart<'_>) -> Option<[u8; 4]> {
+    for attr in e.attributes().flatten() {
+        if attr.key.as_ref() == b"color"
+            && let Ok(s) = std::str::from_utf8(&attr.value)
+        {
+            return parse_hex_color_3mf(s);
+        }
+    }
+    None
+}
+
+/// Parse a 3MF hex color string: #RRGGBB or #RRGGBBAA
+fn parse_hex_color_3mf(s: &str) -> Option<[u8; 4]> {
+    let s = s.trim().strip_prefix('#')?;
+
+    match s.len() {
+        6 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            Some([r, g, b, 255])
+        }
+        8 => {
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+            Some([r, g, b, a])
+        }
+        _ => None,
     }
 }
 
@@ -721,5 +900,117 @@ mod tests {
 
         let result = parse_model_xml(xml).unwrap();
         assert_eq!(result.unit, Unit3mf::Inch);
+    }
+
+    #[test]
+    fn test_parse_hex_color() {
+        assert_eq!(parse_hex_color_3mf("#FF0000"), Some([255, 0, 0, 255]));
+        assert_eq!(parse_hex_color_3mf("#00FF00"), Some([0, 255, 0, 255]));
+        assert_eq!(parse_hex_color_3mf("#0000FF"), Some([0, 0, 255, 255]));
+        assert_eq!(parse_hex_color_3mf("#FF00FF80"), Some([255, 0, 255, 128]));
+        assert_eq!(parse_hex_color_3mf("invalid"), None);
+        assert_eq!(parse_hex_color_3mf("#12345"), None);
+    }
+
+    #[test]
+    fn test_parse_colorgroup() {
+        let xml = r##"
+            <model>
+                <resources>
+                    <colorgroup id="1">
+                        <color color="#FF0000"/>
+                        <color color="#00FF00"/>
+                        <color color="#0000FF"/>
+                    </colorgroup>
+                    <object id="2" pid="1" pindex="0">
+                        <mesh>
+                            <vertices>
+                                <vertex x="0" y="0" z="0"/>
+                                <vertex x="1" y="0" z="0"/>
+                                <vertex x="0" y="1" z="0"/>
+                            </vertices>
+                            <triangles>
+                                <triangle v1="0" v2="1" v3="2"/>
+                            </triangles>
+                        </mesh>
+                    </object>
+                </resources>
+            </model>
+        "##;
+
+        let result = parse_model_xml(xml).unwrap();
+        assert_eq!(result.triangles.len(), 1);
+        assert!(result.has_colors);
+        assert_eq!(result.color_palette.len(), 3);
+        assert_eq!(result.color_palette[0], [255, 0, 0, 255]);
+
+        // Triangle should have vertex colors (all same from default pindex=0)
+        let vc = result.triangles[0].vertex_colors.unwrap();
+        assert_eq!(vc[0], [255, 0, 0, 255]);
+        assert_eq!(vc[1], [255, 0, 0, 255]);
+        assert_eq!(vc[2], [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn test_parse_per_vertex_colors() {
+        let xml = r##"
+            <model>
+                <resources>
+                    <colorgroup id="1">
+                        <color color="#FF0000"/>
+                        <color color="#00FF00"/>
+                        <color color="#0000FF"/>
+                    </colorgroup>
+                    <object id="2">
+                        <mesh>
+                            <vertices>
+                                <vertex x="0" y="0" z="0"/>
+                                <vertex x="1" y="0" z="0"/>
+                                <vertex x="0" y="1" z="0"/>
+                            </vertices>
+                            <triangles>
+                                <triangle v1="0" v2="1" v3="2" pid="1" p1="0" p2="1" p3="2"/>
+                            </triangles>
+                        </mesh>
+                    </object>
+                </resources>
+            </model>
+        "##;
+
+        let result = parse_model_xml(xml).unwrap();
+        assert!(result.has_colors);
+
+        // Triangle should have different colors per vertex
+        let vc = result.triangles[0].vertex_colors.unwrap();
+        assert_eq!(vc[0], [255, 0, 0, 255]); // red
+        assert_eq!(vc[1], [0, 255, 0, 255]); // green
+        assert_eq!(vc[2], [0, 0, 255, 255]); // blue
+    }
+
+    #[test]
+    fn test_parse_no_colors() {
+        let xml = r#"
+            <model>
+                <resources>
+                    <object id="1">
+                        <mesh>
+                            <vertices>
+                                <vertex x="0" y="0" z="0"/>
+                                <vertex x="1" y="0" z="0"/>
+                                <vertex x="0" y="1" z="0"/>
+                            </vertices>
+                            <triangles>
+                                <triangle v1="0" v2="1" v3="2"/>
+                            </triangles>
+                        </mesh>
+                    </object>
+                </resources>
+            </model>
+        "#;
+
+        let result = parse_model_xml(xml).unwrap();
+        assert!(!result.has_colors);
+        assert!(result.color_palette.is_empty());
+        assert!(result.triangles[0].vertex_colors.is_none());
     }
 }

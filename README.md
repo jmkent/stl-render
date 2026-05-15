@@ -72,8 +72,18 @@ Format is auto-detected from file content, not extension.
 - **Component references** with nested transforms (assemblies)
 - **Unit metadata** (millimeter, centimeter, inch, foot, micron)
 - **Multi-object files** (all objects merged with correct positioning)
+- **Colorgroups** with per-face and per-vertex colors (rendered automatically)
 
-Materials and colors are not yet supported (renders use `--material-color`).
+```bash
+# Render with embedded mesh colors (default)
+stl-render model.3mf -o preview.png
+
+# Ignore mesh colors, use uniform material color
+stl-render model.3mf -o preview.png --no-mesh-colors --material-color tan
+
+# List colors in a 3MF file
+stl-render model.3mf --list-colors
+```
 
 ### Format Limitations
 
@@ -181,6 +191,8 @@ Options:
       --background <TYPE>       Background: transparent|solid [default: transparent]
       --background-color <HEX>  Background color for solid [default: #ffffff]
       --material-color <COLOR>  Model color: hex or preset [default: #cccccc]
+      --no-mesh-colors          Ignore embedded mesh colors (3MF), use --material-color
+      --list-colors             List colors in file and exit (3MF only)
       --lighting <PRESET>       Lighting: flat|studio|technical [default: studio]
       --animate                 Enable animated GIF output (rotating view)
       --frames <N>              Number of animation frames [default: 16]

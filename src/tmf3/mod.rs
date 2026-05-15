@@ -26,6 +26,8 @@ use crate::stl::{StlError, Triangle};
 pub struct Tmf3Reader {
     triangles: Vec<Triangle>,
     unit: Unit3mf,
+    color_palette: Vec<[u8; 4]>,
+    has_colors: bool,
 }
 
 impl Tmf3Reader {
@@ -41,6 +43,8 @@ impl Tmf3Reader {
         Ok(Self {
             triangles: result.triangles,
             unit: result.unit,
+            color_palette: result.color_palette,
+            has_colors: result.has_colors,
         })
     }
 
@@ -52,6 +56,16 @@ impl Tmf3Reader {
     /// Get the unit of measurement in the 3MF file.
     pub fn unit(&self) -> Unit3mf {
         self.unit
+    }
+
+    /// Get the color palette from the 3MF file.
+    pub fn color_palette(&self) -> &[[u8; 4]] {
+        &self.color_palette
+    }
+
+    /// Check if this 3MF file has embedded colors.
+    pub fn has_colors(&self) -> bool {
+        self.has_colors
     }
 
     /// Get an iterator over the triangles.

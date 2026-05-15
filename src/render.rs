@@ -59,12 +59,23 @@ impl Framebuffer {
             return;
         }
 
-        let shade = compute_shade(
-            normal,
-            &camera.view_matrix,
-            config.lighting,
-            config.material_color,
-        );
+        // Pre-compute lighting factor for the triangle normal
+        let view_normal = (camera.view_matrix.transform_vector3(normal)).normalize();
+        let lighting = compute_lighting_factor(view_normal, config.lighting);
+
+        // Determine if we should use per-vertex colors
+        let vertex_colors = if config.use_mesh_colors {
+            tri.vertex_colors
+        } else {
+            None
+        };
+
+        // For uniform material color, pre-compute the shade once
+        let uniform_shade = if vertex_colors.is_none() {
+            Some(apply_lighting(config.material_color, lighting))
+        } else {
+            None
+        };
 
         let min_x = s0.x.min(s1.x).min(s2.x).max(0.0) as u32;
         let max_x = s0.x.max(s1.x).max(s2.x).min((self.width - 1) as f32) as u32;
@@ -85,6 +96,16 @@ impl Framebuffer {
 
                     if z < self.depth[idx] {
                         self.depth[idx] = z;
+
+                        // Compute pixel color
+                        let shade = if let Some(vc) = vertex_colors {
+                            // Interpolate vertex colors using barycentric coordinates (sRGB space per 3MF spec)
+                            let interp = interpolate_vertex_colors(vc, u, v, w);
+                            apply_lighting([interp[0], interp[1], interp[2]], lighting)
+                        } else {
+                            uniform_shade.unwrap()
+                        };
+
                         self.color[idx] = shade;
                     }
                 }
@@ -192,14 +213,8 @@ fn barycentric(v0: &Vec3, v1: &Vec3, v2: &Vec3, p: &Vec3) -> Option<(f32, f32, f
     Some((u, v, w))
 }
 
-fn compute_shade(
-    normal: Vec3,
-    view_matrix: &Mat4,
-    lighting: LightingPreset,
-    material_color: [u8; 3],
-) -> [u8; 4] {
-    let view_normal = view_matrix.transform_vector3(normal).normalize_or_zero();
-
+/// Compute lighting intensity factor for a normal vector.
+fn compute_lighting_factor(view_normal: Vec3, lighting: LightingPreset) -> f32 {
     let intensity = match lighting {
         LightingPreset::Flat => {
             let light_dir = Vec3::new(0.0, 0.0, 1.0);
@@ -229,14 +244,39 @@ fn compute_shade(
     };
 
     let ambient = 0.15;
-    let final_intensity = (ambient + intensity * (1.0 - ambient)).min(1.0);
+    (ambient + intensity * (1.0 - ambient)).min(1.0)
+}
 
+/// Apply lighting factor to a base color.
+fn apply_lighting(color: [u8; 3], lighting_factor: f32) -> [u8; 4] {
     [
-        (material_color[0] as f32 * final_intensity) as u8,
-        (material_color[1] as f32 * final_intensity) as u8,
-        (material_color[2] as f32 * final_intensity) as u8,
+        (color[0] as f32 * lighting_factor) as u8,
+        (color[1] as f32 * lighting_factor) as u8,
+        (color[2] as f32 * lighting_factor) as u8,
         255,
     ]
+}
+
+/// Interpolate vertex colors using barycentric coordinates (sRGB space per 3MF spec).
+fn interpolate_vertex_colors(colors: [[u8; 4]; 3], u: f32, v: f32, w: f32) -> [u8; 4] {
+    [
+        (colors[0][0] as f32 * u + colors[1][0] as f32 * v + colors[2][0] as f32 * w) as u8,
+        (colors[0][1] as f32 * u + colors[1][1] as f32 * v + colors[2][1] as f32 * w) as u8,
+        (colors[0][2] as f32 * u + colors[1][2] as f32 * v + colors[2][2] as f32 * w) as u8,
+        (colors[0][3] as f32 * u + colors[1][3] as f32 * v + colors[2][3] as f32 * w) as u8,
+    ]
+}
+
+#[cfg(test)]
+fn compute_shade(
+    normal: Vec3,
+    view_matrix: &Mat4,
+    lighting: LightingPreset,
+    material_color: [u8; 3],
+) -> [u8; 4] {
+    let view_normal = view_matrix.transform_vector3(normal).normalize_or_zero();
+    let lighting_factor = compute_lighting_factor(view_normal, lighting);
+    apply_lighting(material_color, lighting_factor)
 }
 
 #[cfg(test)]
@@ -258,6 +298,7 @@ mod tests {
             background: Background::Transparent,
             background_color: [255, 255, 255],
             material_color: [200, 200, 200],
+            use_mesh_colors: true,
             lighting: LightingPreset::Flat,
             metadata_path: None,
             quiet: true,
@@ -307,6 +348,7 @@ mod tests {
         let tri = Triangle {
             vertices: [[-0.4, -0.4, 0.0], [0.4, -0.4, 0.0], [0.0, 0.4, 0.0]],
             normal: [0.0, 0.0, 1.0],
+            vertex_colors: None,
         };
 
         fb.rasterize_triangle(&tri, &camera, &config);
@@ -329,6 +371,7 @@ mod tests {
         let tri = Triangle {
             vertices: [[10.0, 10.0, 0.0], [11.0, 10.0, 0.0], [10.5, 11.0, 0.0]],
             normal: [0.0, 0.0, 1.0],
+            vertex_colors: None,
         };
 
         fb.rasterize_triangle(&tri, &camera, &config);
@@ -352,6 +395,7 @@ mod tests {
         let tri_far = Triangle {
             vertices: [[-0.4, -0.4, -0.2], [0.4, -0.4, -0.2], [0.0, 0.4, -0.2]],
             normal: [0.0, 0.0, 1.0],
+            vertex_colors: None,
         };
         fb.rasterize_triangle(&tri_far, &camera, &config1);
 
@@ -361,6 +405,7 @@ mod tests {
         let tri_near = Triangle {
             vertices: [[-0.3, -0.3, 0.1], [0.3, -0.3, 0.1], [0.0, 0.3, 0.1]],
             normal: [0.0, 0.0, 1.0],
+            vertex_colors: None,
         };
         fb.rasterize_triangle(&tri_near, &camera, &config2);
 
@@ -383,6 +428,7 @@ mod tests {
         let tri = Triangle {
             vertices: [[-0.4, -0.4, 0.0], [0.0, 0.4, 0.0], [0.4, -0.4, 0.0]],
             normal: [0.0, 0.0, -1.0],
+            vertex_colors: None,
         };
 
         fb.rasterize_triangle(&tri, &camera, &config);

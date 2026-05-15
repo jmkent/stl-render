@@ -69,7 +69,7 @@ impl Iterator for BinaryStlIter<'_> {
         self.offset += TRIANGLE_SIZE;
         self.remaining -= 1;
 
-        Some(Ok(Triangle { vertices, normal }))
+        Some(Ok(Triangle { vertices, normal, vertex_colors: None }))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -129,6 +129,7 @@ mod tests {
         let tri = Triangle {
             normal: [0.0, 0.0, 1.0],
             vertices: [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.5, 1.0, 0.0]],
+            vertex_colors: None,
         };
         let data = make_binary_stl(&[tri]);
 
@@ -154,6 +155,7 @@ mod tests {
                     [i as f32 + 1.0, 0.0, 0.0],
                     [i as f32 + 0.5, 1.0, 0.0],
                 ],
+                vertex_colors: None,
             })
             .collect();
 
@@ -186,6 +188,7 @@ mod tests {
         let tri = Triangle {
             normal: [0.0, 0.0, 1.0],
             vertices: [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vertex_colors: None,
         };
         let mut data = make_binary_stl(&[tri]);
         data[80..84].copy_from_slice(&5u32.to_le_bytes()); // lie about count

@@ -26,6 +26,8 @@ pub enum StlError {
 pub struct Triangle {
     pub vertices: [[f32; 3]; 3],
     pub normal: [f32; 3],
+    /// Per-vertex RGBA colors (from 3MF colorgroup). None for STL/OBJ or uncolored 3MF.
+    pub vertex_colors: Option<[[u8; 4]; 3]>,
 }
 
 enum StlData {

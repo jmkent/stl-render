@@ -123,6 +123,22 @@ impl MeshReader {
             MeshReader::Obj(r) => Ok(MeshTriangleIter::Obj(r.triangles())),
         }
     }
+
+    /// Check if this mesh has embedded colors (3MF only).
+    pub fn has_colors(&self) -> bool {
+        match self {
+            MeshReader::Tmf3(r) => r.has_colors(),
+            _ => false,
+        }
+    }
+
+    /// Get the color palette (3MF only, empty for other formats).
+    pub fn color_palette(&self) -> &[[u8; 4]] {
+        match self {
+            MeshReader::Tmf3(r) => r.color_palette(),
+            _ => &[],
+        }
+    }
 }
 
 /// Iterator over triangles from any supported mesh format.
@@ -514,6 +530,7 @@ fn render_print_grid_to_image(
             background: config.background,
             background_color: config.background_color,
             material_color: config.material_color,
+            use_mesh_colors: config.use_mesh_colors,
             lighting: config.lighting,
             metadata_path: None,
             quiet: true,
