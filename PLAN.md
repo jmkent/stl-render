@@ -2,623 +2,40 @@
 
 ## Goal
 
-Build a standalone Rust binary that renders STL files to deterministic 2D PNG previews.
+Build a standalone Rust binary that renders 3D mesh files (STL, OBJ, 3MF) to deterministic 2D PNG previews or animated GIF.
 
 ```bash
-stl-render input.stl -o preview.png --view iso --width 512 --height 512
+stl-render model.stl -o preview.png --view print --material-color tan
+stl-render model.3mf -o preview.gif --animate
 ```
 
-## Scope
+## Project Status
 
-- Input: STL (binary and ASCII), OBJ, and 3MF
-- Large-file handling: designed and tested for STL up to 500MB+; OBJ and 3MF are buffered in memory
-- Output: PNG or animated GIF
-- Rendering: software rasterizer, headless
-- Packaging: static binary, no runtime deps
+**Completed milestones (M0-M15):** See ARCHITECTURE.md for implementation details.
 
-## Non-Goals
-
-- Slicer, mesh repair, CAD viewer
-- GPU rendering
-- Additional format support beyond STL/3MF (OBJ, STEP, GLTF)
-- Python bindings (future phase)
-
-## Design Decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Rendering backend | Software rasterizer | Headless, deterministic, no GPU deps |
-| STL parsing | Custom streaming parser | Zero deps, handles 500MB+ via mmap |
-| Determinism | Same-machine | Cross-platform not required |
-| Math library | glam | Fast, ergonomic, minimal |
-
-## CLI Specification
-
-```bash
-stl-render <INPUT> -o <OUTPUT> [OPTIONS]
-```
-
-**Required:**
-- `INPUT` - STL file path (or `-` for stdin)
-- `-o, --output` - PNG output path (or `-` for stdout)
-
-**View (mutually exclusive):**
-- `--view <PRESET>` - front|back|left|right|top|bottom|iso (default: iso)
-- `--azimuth <DEG> --elevation <DEG>` - custom angles
-
-**Image:**
-- `--width <PX>` - output width (default: 512)
-- `--height <PX>` - output height (default: 512)
-- `--padding <RATIO>` - padding around model (default: 0.08)
-- `--aa <LEVEL>` - anti-aliasing: none|2x|4x (default: 2x)
-
-**Appearance:**
-- `--background <TYPE>` - transparent|solid (default: transparent)
-- `--background-color <HEX>` - e.g., "#ffffff"
-- `--material-color <HEX>` - e.g., "#cccccc"
-- `--lighting <PRESET>` - flat|studio|technical (default: studio)
-
-**Output:**
-- `--metadata <PATH>` - write render metadata JSON
-- `--quiet` - suppress progress output
-- `--verbose` - detailed progress
-
-**Exit codes:**
-- 0: Success
-- 1: Usage error
-- 2: Input error
-- 3: Output error
+| Feature | Status |
+|---------|--------|
+| STL parsing (binary/ASCII, streaming) | ✓ |
+| OBJ parsing (buffered) | ✓ |
+| 3MF parsing (ZIP/XML, buffered) | ✓ |
+| Software rasterizer | ✓ |
+| View presets (7 standard + 5 print) | ✓ |
+| Print grid composite | ✓ |
+| Lighting presets (flat/studio/technical) | ✓ |
+| Material color presets | ✓ |
+| Anti-aliasing (2x/4x SSAA) | ✓ |
+| Animated GIF output | ✓ |
+| Batch mode with error handling | ✓ |
+| Library API | ✓ |
+| Configuration validation | ✓ |
 
 ---
 
-## Milestone Checklist
-
-Development follows TDD: write failing test first, then implement.
-
-### M0: Project Setup ✓
-
-**Goal:** Repository ready for development.
-
-#### Rust Project
-- [x] Initialize cargo project: `cargo init --name stl-render`
-- [x] Add dependencies to Cargo.toml
-- [x] Create module structure (empty files)
-- [x] Setup `cargo test` and `cargo clippy` in CI
-- [x] Add .gitignore for Rust + Python artifacts
-
-#### Test Fixtures
-- [x] Verify uv is installed: `uv --version`
-- [x] Generate fixtures: `cd tools/fixtures && uv run generate_fixtures.py -o ../../fixtures`
-- [x] Verify fixtures exist: cube.stl, sphere.stl, etc.
-- [x] Create `fixtures/golden/` directory for reference PNGs
-
----
-
-### M1: Walking Skeleton ✓
-
-**Goal:** End-to-end pipeline works with placeholders.
-
-#### CLI (cli.rs)
-- [x] **Test:** parse minimal args `stl-render input.stl -o out.png`
-- [x] **Test:** parse all flags with valid values
-- [x] **Test:** reject missing required args (clap handles)
-- [x] **Test:** reject --view combined with --azimuth
-- [x] Implement clap derive struct
-- [x] Implement validation logic
-- [x] Implement RenderConfig builder
-
-#### STL Detection (stl/parser.rs)
-- [x] **Test:** detect binary STL from magic bytes
-- [x] **Test:** detect ASCII STL from "solid" prefix
-- [x] **Test:** reject empty file
-- [x] Implement format detection
-
-#### Placeholder Output (output.rs)
-- [x] **Test:** write solid color PNG to file
-- [x] **Test:** write PNG to stdout when path is "-"
-- [x] Implement write_png with placeholder image
-
-#### Main Integration (main.rs)
-- [x] **Test:** exit code 0 on success
-- [x] **Test:** exit code 1 on bad args
-- [x] **Test:** exit code 2 on missing input file
-- [x] Wire up CLI → placeholder PNG output
-
-**Acceptance:** `stl-render cube.stl -o test.png` produces a solid gray PNG. ✓
-
----
-
-### M2: STL Parsing ✓
-
-**Goal:** Parse binary and ASCII STL into triangle stream.
-
-#### Binary Parser (stl/binary.rs)
-- [x] **Test:** parse single triangle
-- [x] **Test:** parse 1000 triangles, verify count
-- [x] **Test:** handle file with zero triangles
-- [x] **Test:** error on truncated file
-- [x] **Test:** error on triangle count mismatch
-- [x] Implement BinaryStlIter
-
-#### ASCII Parser (stl/ascii.rs)
-- [x] **Test:** parse single triangle
-- [x] **Test:** parse multi-triangle file
-- [x] **Test:** handle various whitespace formats
-- [x] **Test:** handle scientific notation in coords
-- [x] **Test:** error on malformed facet
-- [x] **Test:** error on unclosed solid
-- [x] Implement AsciiStlIter
-
-#### Streaming Interface (stl/mod.rs)
-- [x] **Test:** StlReader::open detects format correctly
-- [x] **Test:** iterate binary STL, collect triangles
-- [x] **Test:** iterate ASCII STL, collect triangles
-- [x] **Test:** triangle_count() returns Some for binary, None for ASCII
-- [x] Implement StlReader with mmap
-
-#### Fixture Verification
-Fixtures are generated by `tools/fixtures/generate_fixtures.py` (see M0).
-- [x] **Test:** cube.stl has 12 triangles
-- [x] **Test:** cube_ascii.stl parses identically to cube.stl
-- [x] **Test:** single_triangle.stl has 1 triangle
-- [x] **Test:** empty.stl has 0 triangles (valid)
-- [x] **Test:** truncated.stl returns error
-
-**Acceptance:** Parse cube.stl, verify 12 triangles with correct vertices. ✓
-
----
-
-### M3: Bounding Box & Normals ✓
-
-**Goal:** Compute geometry metadata from triangle stream.
-
-#### Bounding Box (mesh.rs)
-- [x] **Test:** BoundingBox::new() is empty/invalid
-- [x] **Test:** extend() with single point
-- [x] **Test:** extend() accumulates min/max correctly
-- [x] **Test:** center() returns midpoint
-- [x] **Test:** dimensions() returns size
-- [x] Implement BoundingBox
-
-#### Normal Computation (mesh.rs)
-- [x] **Test:** compute_normal for XY plane triangle
-- [x] **Test:** compute_normal for degenerate triangle (returns zero)
-- [x] **Test:** normal is unit length
-- [x] Implement compute_normal
-
-#### Streaming Bounds
-- [x] **Test:** compute bounds from StlReader without storing mesh
-- [x] Implement compute_bounds() helper
-
-**Acceptance:** Compute bounds for cube.stl, verify min/max corners. ✓
-- cube.stl: min=[-0.5, -0.5, -0.5], max=[0.5, 0.5, 0.5], dims=[1, 1, 1]
-
----
-
-### M4: Camera Math ✓
-
-**Goal:** View transforms and orthographic projection.
-
-#### View Presets (camera.rs)
-- [x] **Test:** Front view looks down -Z axis
-- [x] **Test:** Iso view is 45° azimuth, 35° elevation
-- [x] **Test:** All 7 presets produce valid matrices
-- [x] Implement ViewPreset enum and view_matrix()
-
-#### Custom Angles (camera.rs)
-- [x] **Test:** azimuth 0, elevation 0 equals Front
-- [x] **Test:** azimuth rotates around Y axis
-- [x] **Test:** elevation tilts up/down
-- [x] Implement from_angles()
-
-#### Auto-Framing (camera.rs)
-- [x] **Test:** unit cube fits in 512x512 with padding
-- [x] **Test:** tall object (1x10x1) is centered vertically
-- [x] **Test:** wide object (10x1x1) is centered horizontally
-- [x] **Test:** padding 0.0 fills entire image
-- [x] **Test:** padding 0.1 leaves 10% margin
-- [x] Implement orthographic projection with auto-fit
-
-**Acceptance:** Render cube from iso view, model is centered with padding. ✓
-
----
-
-### M5: Software Rasterizer ✓
-
-**Goal:** Render triangles to depth/color buffer.
-
-#### Framebuffer (render.rs)
-- [x] **Test:** new() initializes with background color
-- [x] **Test:** new() with transparent background has alpha=0
-- [x] **Test:** dimensions match requested size
-- [x] Implement Framebuffer struct
-
-#### Triangle Rasterization (render.rs)
-- [x] **Test:** rasterize triangle covering full screen
-- [x] **Test:** triangle outside viewport is clipped
-- [x] **Test:** overlapping triangles use depth test
-- [x] **Test:** backface culling
-- [x] Implement rasterize_triangle with barycentric coords
-
-#### Flat Shading (render.rs)
-- [x] **Test:** triangle facing light is bright
-- [x] **Test:** triangle facing away is dark
-- [x] **Test:** material color affects output
-- [x] Implement basic diffuse shading
-
-#### Integration
-- [x] **Test:** render cube.stl, verify non-empty image
-- [x] **Test:** determinism: same input produces identical bytes
-- [x] Wire up full pipeline: STL → bounds → camera → render → PNG
-
-**Acceptance:** `stl-render cube.stl -o cube.png` produces recognizable cube. ✓
-
----
-
-### M6: Lighting Presets ✓
-
-**Goal:** Multiple lighting configurations.
-
-#### Presets (render.rs)
-- [x] **Test:** flat preset has single front light
-- [x] **Test:** studio preset has key + fill + rim
-- [x] **Test:** technical preset has uniform lighting
-- [x] Implement LightingPreset enum
-- [x] Implement light direction(s) per preset
-
-#### Material Color
-- [x] **Test:** --material-color "#ff0000" produces red output
-- [x] **Test:** hex parsing with/without # prefix
-- [x] Implement color parsing in cli.rs
-
-**Acceptance:** Render with each lighting preset, visible difference. ✓
-
----
-
-### M7: Anti-Aliasing ✓
-
-**Goal:** Supersampled rendering for smooth edges.
-
-#### SSAA (render.rs)
-- [x] **Test:** 2x renders at double resolution
-- [x] **Test:** 4x renders at quadruple resolution
-- [x] **Test:** none skips downsampling
-- [x] **Test:** downsampled image has correct dimensions
-- [x] Implement render at Nx, box filter downsample
-
-#### Visual Quality
-- [x] **Test:** AA none vs 2x produce different output
-- [x] Compare none vs 2x visually
-
-**Acceptance:** Cube edges are noticeably smoother with 2x AA. ✓
-
----
-
-### M8: Full CLI Surface ✓
-
-**Goal:** All documented flags work correctly.
-
-#### Background Options
-- [x] **Test:** --background transparent has alpha channel
-- [x] **Test:** --background solid uses --background-color
-- [x] **Test:** default background is transparent
-
-#### Stdin/Stdout
-- [x] **Test:** read STL from stdin (pipe)
-- [x] **Test:** write PNG to stdout
-- [x] Handle "-" special path
-
-#### Metadata Output
-- [x] **Test:** --metadata writes JSON file
-- [x] **Test:** JSON contains triangle_count, dimensions, bounds
-- [x] Implement RenderMetadata serialization
-
-#### Verbosity
-- [x] **Test:** --quiet suppresses stdout (default is silent)
-- [x] **Test:** --verbose prints progress info
-- [x] Implement output control
-
-**Acceptance:** Every CLI flag documented above works as specified. ✓
-
----
-
-### M9: Large STL Handling ✓
-
-**Goal:** Process 500MB+ files without excessive memory.
-
-#### Large Fixture Generation
-Generate large test files (not committed to repo):
-```bash
-cd tools/fixtures
-uv run generate_fixtures.py -o ../../fixtures --large
-# Creates: large_1m.stl (~63MB), large_10m.stl (~500MB)
-```
-
-#### Memory Efficiency
-- [x] **Test:** 63MB STL uses ~71MB RSS (bounded by mmap)
-- [x] **Test:** 500MB STL uses ~529MB RSS, completes without OOM
-- [x] Verify two-pass streaming works
-
-#### Performance (Apple M1, release build)
-- [x] **Benchmark:** 1.3M triangles in 0.05s user time (target: <2s) ✓
-- [x] **Benchmark:** 10.5M triangles in 0.31s user time (target: <20s) ✓
-- [x] Memory-mapped I/O eliminates read overhead
-
-#### Error Handling
-- [x] **Test:** graceful error on truncated/corrupt file
-- [x] **Test:** --verbose shows progress (triangle count, bounds)
-
-**Acceptance:** Render 500MB STL in reasonable time with bounded memory. ✓
-
----
-
-### M10: Batch Mode with Graceful Error Handling ✓
-
-**Goal:** Process multiple files/views with robust per-file error handling.
-
-#### Multiple Inputs
-- [x] **Test:** `stl-render *.stl -o outdir/` processes all files
-- [x] **Test:** output naming: `input.stl` → `outdir/input.png`
-- [x] Implement multiple positional args
-- [x] **Test:** `stl-render models/ -o outdir/ --recursive` traverses nested directories
-- [x] **Test:** recursive output preserves nested paths under output directory
-- [x] Implement `--recursive` / `-r` directory traversal
-- [x] **Test:** directory inputs include STL, OBJ, and 3MF files case-insensitively
-- [x] **Test:** same-stem multi-format inputs avoid output collisions
-
-#### Multiple Views
-- [x] **Test:** `--views front,back,iso` produces 3 PNGs per input
-- [x] **Test:** output naming: `input.front.png`, `input.back.png`
-- [x] Implement multi-view mode with comma-separated list
-
-#### Error Handling Per File
-- [x] **Test:** batch with one invalid file continues processing others
-- [x] **Test:** final exit code reflects worst error (0=success, 2=input errors)
-- [x] **Test:** `--strict` flag aborts on first error
-- [x] **Test:** summary output shows success/failure count
-
-#### Invalid Input Detection
-- [x] **Test:** empty file → clear error message
-- [x] **Test:** not an STL → clear error message
-- [x] **Test:** binary STL with wrong triangle count → error
-- [x] **Test:** ASCII STL with syntax error → error with line number
-
-#### File System Errors
-- [x] **Test:** input file doesn't exist → exit code 2
-- [x] **Test:** output directory doesn't exist → creates it automatically
-
-**Acceptance:** `stl-render fixtures/*.stl -o output/` works; no panics on malformed input. ✓
-
----
-
-### M11: Print View Presets & Grid ✓
-
-**Goal:** Directional print views (all Z-up) and 2x2 grid composite.
-
-#### New Print View Variants
-
-All maintain Z-up orientation (Vec3::Z in look_at_rh):
-
-| View | Azimuth | Description |
-|------|---------|-------------|
-| print (existing) | 20° | Front-right angle |
-| print-front | 20° | Alias for print |
-| print-left | 110° | Looking from left |
-| print-right | -70° | Looking from right |
-| print-back | 200° | Looking from back |
-
-- [x] **Test:** `--view print-left` renders with Z-up orientation
-- [x] **Test:** `--view print-right` renders with Z-up orientation
-- [x] **Test:** `--view print-back` renders with Z-up orientation
-- [x] **Test:** `--view print-front` is alias for `--view print`
-- [x] **Test:** all print-* views produce valid matrices
-- [x] Implement `from_print_view_with_azimuth(azimuth)` in camera.rs
-- [x] Add `PrintFront`, `PrintLeft`, `PrintRight`, `PrintBack` to ViewPreset enum
-
-#### 2x2 Grid Snapshot
-
-`--view print-grid` produces single image with 4 quadrants:
-```
-+---------------+---------------+
-| print-front   | print-right   |
-+---------------+---------------+
-| print-back    | print-left    |
-+---------------+---------------+
-```
-
-- [x] **Test:** `--view print-grid` produces image with 4 quadrants
-- [x] **Test:** grid dimensions correct (each quadrant half size)
-- [x] **Test:** each quadrant has visible content
-- [x] Implement grid composite using image crate
-- [x] Add `PrintGrid` to ViewPreset enum
-
-**Acceptance:** All print-* views render with Z-up; grid shows 4 recognizable angles. ✓
-
----
-
-### M12: Material Color Presets ✓
-
-**Goal:** Named presets for common filament colors + hex support.
-
-#### Color Presets
-
-| Name | Hex | RGB |
-|------|-----|-----|
-| tan | #C19A6B | [193, 154, 107] |
-| blue-grey | #708090 | [112, 128, 144] |
-| white | #FFFFFF | [255, 255, 255] |
-| black | #1A1A1A | [26, 26, 26] |
-| red | #CC3333 | [204, 51, 51] |
-| orange | #FF6600 | [255, 102, 0] |
-| green | #339933 | [51, 153, 51] |
-| blue | #3366CC | [51, 102, 204] |
-| grey/gray | #808080 | [128, 128, 128] |
-| silver | #C0C0C0 | [192, 192, 192] |
-
-- [x] **Test:** `--material-color tan` produces correct RGB
-- [x] **Test:** `--material-color blue-grey` produces correct RGB
-- [x] **Test:** `--material-color TAN` works (case insensitive)
-- [x] **Test:** `--material-color "#ff0000"` still works (hex fallback)
-- [x] **Test:** all 10 presets produce correct values
-- [x] Implement `parse_color()` with preset lookup + hex fallback
-- [x] Update CLI help to list available presets
-
-**Acceptance:** `--material-color tan` works; hex colors still work. ✓
-
----
-
-### M13: Library API ✓
-
-**Goal:** Clean public API for embedding.
-
-#### Public Interface (lib.rs)
-- [x] **Test:** call `stl_render::render(&config)` from external crate
-- [x] **Test:** `RenderConfig` is constructible without cli module
-- [x] **Test:** `RenderConfigBuilder` pattern works
-- [x] Export: RenderConfig, ViewPreset, ViewConfig, RenderMetadata, RenderError
-- [x] Export: StlReader, Triangle, BoundingBox, AntiAliasing, Background, LightingPreset
-- [x] Add `render_to_image()` returning `(RgbaImage, RenderMetadata)`
-- [x] Document public API with rustdoc (module docs, struct/enum docs)
-
-#### Stability
-- [x] Review API surface for breaking change risk
-- [x] Add `#[non_exhaustive]` to enums that may grow (ViewPreset, ViewConfig, AntiAliasing, Background, LightingPreset)
-- [x] Add `Default` derives where appropriate
-
-**Acceptance:** External crate can `stl_render::render(&config)?` ✓
-
----
-
-### M14: 3MF and OBJ Format Support ✓
-
-**Goal:** Parse 3MF and OBJ files using existing triangle streaming architecture.
-
-#### Module Structure (src/tmf3/)
-- [x] Implement `Tmf3Reader` with buffered triangles
-- [x] Implement `Tmf3Iter` iterator over triangles
-- [x] Implement XML parser for `3D/3dmodel.model`
-- [x] Implement ZIP extraction with `zip` crate
-- [x] Parse vertices and triangles from XML mesh elements
-- [x] Compute normals from vertex positions
-
-#### Module Structure (src/obj/)
-- [x] Implement `ObjReader` with buffered triangles
-- [x] Implement `ObjIter` iterator over triangles
-- [x] Parse `v` (vertex) and `f` (face) lines
-- [x] Handle face formats: `f v1 v2 v3` and `f v1/vt1/vn1 ...`
-- [x] Triangulate polygons with more than 3 vertices (fan triangulation)
-- [x] Compute normals from vertex positions
-
-#### MeshReader Abstraction (lib.rs)
-- [x] Create `MeshReader` enum wrapping `StlReader`, `Tmf3Reader`, and `ObjReader`
-- [x] Create `MeshTriangleIter` enum for unified iteration
-- [x] Implement `MeshReader::open()` with format auto-detection
-- [x] Implement `MeshReader::from_reader()` for stdin support
-- [x] Update `compute_bounds()` to use `MeshReader`
-- [x] Update render pipeline to use `MeshReader`
-
-#### Format Detection
-- [x] Check for ZIP magic bytes `PK\x03\x04` (3MF)
-- [x] Check for OBJ text patterns (`v `, `f `, etc.)
-- [x] Auto-detect from file content, not extension
-
-#### Multi-Object Handling (3MF)
-- [x] Merge all `<object>` elements into single triangle stream
-
-#### Test Plan (3MF)
-- [x] **Test:** parse minimal 3MF with single triangle
-- [x] **Test:** parse 3MF with multiple triangles (cube, sphere)
-- [x] **Test:** parse 3MF with multiple objects (merged)
-- [x] **Test:** error on malformed ZIP
-- [x] **Test:** error on missing model file
-- [x] **Test:** `stl-render model.3mf -o out.png` renders correctly
-- [x] **Test:** works with all view presets
-- [x] **Test:** works with batch mode
-- [x] **Test:** format auto-detected from content, not extension
-
-#### Test Plan (OBJ)
-- [x] **Test:** parse OBJ cube (12 triangles)
-- [x] **Test:** parse OBJ sphere (1280 triangles)
-- [x] **Test:** `stl-render model.obj -o out.png` renders correctly
-- [x] **Test:** works with all view presets
-- [x] **Test:** works with batch mode
-- [x] **Test:** works with animation
-- [x] **Test:** format auto-detected from content, not extension
-- [x] **Test:** OBJ and STL produce same triangle count for identical models
-
-#### Fixtures
-- [x] `fixtures/cube.3mf`, `fixtures/cube.obj` - 12 triangles
-- [x] `fixtures/sphere.3mf`, `fixtures/sphere.obj` - 1280 triangles
-- [x] `fixtures/single_triangle.3mf`, `fixtures/single_triangle.obj` - 1 triangle
-- [x] `fixtures/multi_object.3mf` - cube + small sphere merged
-- [x] `fixtures/malformed.3mf` - invalid ZIP for error testing
-- [x] `fixtures/missing_model.3mf` - ZIP without model file
-
-**Acceptance:** All three formats (STL, OBJ, 3MF) render identically for the same geometry. ✓
-
----
-
-### M15: Animated GIF Output ✓
-
-**Goal:** Generate rotating animation of print bed view as GIF, using 16 orientations for smooth 360° rotation.
-
-#### CLI Flags
-- [x] Add `--animate` flag to enable animated GIF output
-- [x] Add `--frames <N>` flag (default: 16)
-- [x] Add `--frame-delay <MS>` flag (default: 100)
-- [x] Add fields to `RenderConfig` and `RenderConfigBuilder`
-- [x] Add fields to `BatchConfig`
-
-#### GIF Encoding (output.rs)
-- [x] Add `gif` feature to image crate in Cargo.toml
-- [x] Implement `write_gif()` with infinite loop
-- [x] Implement `write_gif_to_stdout()`
-- [x] Fix PNG encoding to explicitly use PNG format regardless of extension
-
-#### Animation Rendering (lib.rs)
-- [x] Implement `render_animated()` function
-- [x] Parse mesh and compute bounds once
-- [x] Compute bounding sphere radius for consistent scaling
-- [x] Render frames at evenly-spaced azimuths (0° to 360°)
-- [x] Use Z-up print bed camera orientation
-
-#### Fixed-Scale Camera (camera.rs)
-- [x] Add `from_print_view_for_animation()` method
-- [x] Add `compute_ortho_projection_fixed()` for sphere-based projection
-- [x] Use bounding sphere radius for consistent scale across all frames
-
-#### Test Plan
-- [x] **Test:** `--animate` flag produces GIF output
-- [x] **Test:** without `--animate`, `.gif` extension still produces PNG
-- [x] **Test:** `--frames 8` produces 8-frame GIF
-- [x] **Test:** `--frame-delay 200` works
-- [x] **Test:** GIF loops infinitely (Repeat::Infinite)
-- [x] **Test:** works with material colors
-- [x] **Test:** works with 3MF input
-- [x] **Test:** verbose mode shows frame progress
-- [x] **Test:** builder API supports animation options
-
-#### Documentation
-- [x] Add `examples/benchy_animated.gif` with fixed-scale rotation
-- [x] Update EXAMPLES.md with animated GIF section
-- [x] Update README.md with animation flags and feature
-
-**Acceptance:** `stl-render model.stl -o preview.gif --animate` produces 16-frame rotating animation; rotation smooth with consistent scale throughout. ✓
-
----
+## Outstanding Work
 
 ### M16: Release Packaging
 
 **Goal:** Automated release pipeline with cross-platform binaries and crates.io publishing.
-
-#### Workflow Trigger
-
-```yaml
-on:
-  push:
-    tags:
-      - 'v[0-9]+.*'
-```
 
 #### Build Targets
 
@@ -631,22 +48,6 @@ on:
 | `aarch64-apple-darwin` | macos-latest | .tar.gz |
 | `x86_64-pc-windows-msvc` | windows-latest | .zip |
 
-#### Release Artifacts
-
-- Platform binaries: `stl-render-{version}-{target}.tar.gz/.zip`
-- GitHub Release with changelog extracted from `CHANGELOG.md`
-- crates.io package
-
-#### Secrets Required
-
-- `CARGO_REGISTRY_TOKEN` for crates.io publish
-
-#### Files (already prepared)
-
-- `.github/workflows/release.yml` - Release workflow
-- `CHANGELOG.md` - Release notes
-- `Cargo.toml` - crates.io metadata and exclusions
-
 #### Release Process
 
 1. Update `version` in `Cargo.toml`
@@ -655,134 +56,40 @@ on:
 4. Push: `git push origin main --tags`
 5. Workflow builds binaries, creates release, publishes to crates.io
 
-#### Test Plan
+#### Pre-Release Checklist
 
-- [ ] Dry-run workflow on test branch
-- [ ] All 6 targets build successfully
-- [ ] Changelog extraction works
-- [ ] Download and verify binaries on each platform
-- [ ] `cargo install stl-render` works after publish
+- [ ] Run `cargo publish --dry-run --locked`
+- [ ] Verify all 6 targets build in CI
+- [ ] Test downloaded binaries on each platform
 
-**Acceptance:** Push `v0.2.0` tag triggers workflow; all platforms build; GitHub Release and crates.io publish succeed.
+**Acceptance:** Push tag triggers workflow; all platforms build; GitHub Release and crates.io publish succeed.
 
 ---
 
-## Known Issues
+### Remaining Documentation Tasks
 
-These items came out of the v1 maintainability review. They are concrete follow-up tasks before treating the project as a narrow stable Rust library API plus supported CLI.
+From Known Issues review - functional code complete, documentation pending:
 
-### KI1: Public API Surface
-- [ ] Narrow `src/lib.rs` exports to the stable embedding API only
-- [ ] Make parser, renderer, output, and CLI implementation modules private or `pub(crate)`
-- [ ] Keep stable exports focused on `RenderConfig`, `RenderConfigBuilder`, `ViewPreset`, `ViewConfig`, `RenderMetadata`, `RenderError`, `render()`, and `render_to_image()`
-- [ ] Decide whether `MeshReader`, `Triangle`, and `BoundingBox` are stable public API or internal implementation details
-- [ ] Add/adjust compile tests proving an external crate can use the intended API without importing internal modules
-- [ ] Update rustdoc examples to match the narrowed API
-
-### KI2: Render Configuration Validation
-- [ ] Add central `RenderConfig::validate()` used by CLI parsing and public render entrypoints
-- [ ] Reject zero width/height before framebuffer or camera setup
-- [ ] Use checked arithmetic for anti-aliased render dimensions and framebuffer allocation sizes
-- [ ] Reject invalid animation settings such as `frames = 0`
-- [ ] Validate padding, frame delay, and other numeric options with clear config errors
-- [ ] Add tests for invalid dimensions, overflow-sized dimensions, invalid padding, and zero-frame GIFs
-
-### KI3: Batch Error Aggregation
-- [ ] Track aggregate batch exit status by severity instead of returning the first error
-- [ ] Ensure output errors produce exit code 3 even if earlier inputs produced exit code 2
-- [ ] Move per-output parent directory creation into the per-file result path where practical
-- [ ] Add tests for mixed input and output failures, strict mode, and recursive batch failures
-
-### KI4: 3MF Compatibility Scope
-- [ ] Document the current 3MF subset if v1 intentionally supports mesh extraction only
-- [ ] Decide whether v1 needs real 3MF build-scene rendering
-- [ ] If required, parse `<build>` items, object IDs, transforms, components, and units
-- [ ] Render only referenced build items when build data exists
-- [ ] Add fixtures and tests for transformed build items, component instances, unreferenced objects, and multiple object IDs
-
-### KI5: OBJ Compatibility Scope
-- [ ] Document that OBJ is buffered in memory and not covered by the large-STL memory guarantees
-- [ ] Decide whether to support relative negative face indices
-- [ ] Decide whether to support line continuations and other common OBJ variants
-- [ ] Improve format detection for OBJ files with long comments or metadata before geometry
-- [ ] Add tests for negative indices, long headers, comments before geometry, and unsupported syntax diagnostics
-
-### KI6: User-Facing Terminology and Documentation
-- [ ] Replace stale STL-only wording in CLI help, crate description, README, EXAMPLES, and ARCHITECTURE
-- [ ] Rename or wrap `RenderError::Stl` so OBJ and 3MF failures are reported as mesh/input errors
-- [ ] Clarify that animated GIF output is enabled by `--animate`, not by the `.gif` extension alone
-- [ ] Document that large-file performance claims apply to STL only
-- [ ] Add examples that render the entire `fixtures` directory recursively across STL, OBJ, and 3MF inputs
-
-### KI7: Release and Repository Hygiene
-- [x] Stop ignoring `Cargo.lock`
-- [ ] Commit `Cargo.lock` so `cargo check --locked`, release builds, and publish dry-runs are reproducible
-- [ ] Commit prepared `.github/` workflows and `CHANGELOG.md` intentionally
-- [ ] Update `Cargo.toml` version and release metadata before tagging
-- [ ] Run `cargo package --list` and `cargo publish --dry-run --locked`
-- [ ] Run the release workflow on a test branch before tagging
-
-### KI8: Animated GIF Memory Use
-- [ ] Replace all-frames-in-memory GIF generation with a streaming encoder path
-- [ ] Avoid cloning full frame buffers during GIF encoding where possible
-- [ ] Add a stress test or benchmark for high-resolution, multi-frame GIF generation
-- [ ] Document practical memory expectations for GIF output
-
-### KI9: Rasterizer Robustness
-- [ ] Decide whether unconditional backface culling should remain the default
-- [ ] Add a render option or internal path for double-sided rendering if inconsistent winding is common
-- [ ] Document current clipping behavior for triangles crossing near/far bounds
-- [ ] Add tests for inconsistent winding, near/far clipping, and partially clipped triangles
-
-### KI10: Degenerate Geometry Handling
-- [ ] Define renderer policy for zero-area triangles, duplicate vertices, NaN coordinates, and infinite coordinates
-- [ ] Skip zero-area triangles silently
-- [ ] Reject or skip NaN/Inf coordinates with a clear diagnostic policy
-- [ ] Track how many triangles are filtered and expose that count in verbose output or metadata if useful
-- [ ] Return a clear input error when a model has no valid triangles after filtering
-- [ ] Add fixtures for zero-area triangles, duplicate vertices, NaN coordinates, Inf coordinates, and all-filtered geometry
-- [ ] Add parser-level tests that malformed numeric data is rejected consistently for STL, OBJ, and 3MF
-- [ ] Add render-level tests that mixed valid/degenerate geometry still produces an image without panics
-- [ ] Add CLI tests for all-filtered geometry and verify exit code 2 with a clear message
-
-### KI11: Output Error Handling
-- [ ] Audit every output path for unwritable files, unwritable directories, broken pipes, and unsupported stdout combinations
-- [ ] Ensure output failures return `RenderError::Output` and exit code 3 instead of panicking or reporting input/config errors
-- [ ] Ensure metadata write failures are reported consistently with image/GIF write failures
-- [ ] Ensure batch mode prints one concise failed conversion line for each output failure
-- [ ] Add CLI tests for unwritable output file, unwritable output directory, invalid metadata path, and batch output-directory failures
-- [ ] Add tests proving non-strict batch mode continues after per-file output failures where possible
-- [ ] Add tests proving strict batch mode aborts on the first output failure with exit code 3
+- [ ] **KI4/KI5:** Add format limitations section to README.md documenting 3MF and OBJ subset support
+- [ ] **KI8:** Add memory note to README for high-frame-count GIF animations
 
 ---
 
-## Visual Regression Strategy
+## Known Issues Summary
 
-The project has reached stable image generation without relying on committed golden PNGs. Current tests already cover the higher-value invariants for day-to-day development: deterministic output bytes, image dimensions, visible content, alpha/background behavior, lighting differences, material colors, print-grid composition, batch traversal, and animated GIF frame behavior.
-
-Full golden-image comparison is still useful, but it should not be a default v1 CI requirement. Pixel fixtures are expensive to maintain, produce noisy diffs for intentional renderer changes, and can make small dependency or platform changes look like regressions even when the rendered output remains acceptable.
-
-### Current Approach
-- [x] Prefer semantic image assertions in unit and integration tests
-- [x] Verify deterministic output for identical input/configuration
-- [x] Verify rendered images have expected dimensions and visible content
-- [x] Verify backgrounds, alpha, material colors, lighting presets, and grid layout with targeted pixel assertions
-- [x] Keep generated example images in `examples/` for documentation and manual inspection
-
-### Optional Release Gate
-- [ ] Add a non-default visual regression script under `tools/` if repeated manual release checks become expensive
-- [ ] Render a small representative matrix: `cube`, `sphere`, `flat_tile`, `long_beam`, `print-grid`, and one animated GIF
-- [ ] Include STL, OBJ, and 3MF equivalents only where format parity is the behavior under test
-- [ ] Compare image dimensions, non-transparent bounds, visible-pixel counts, and perceptual/hash summaries before considering full pixel diffs
-- [ ] Store generated release-check outputs outside committed fixtures by default, for example under `target/visual-regression/`
-- [ ] Commit golden PNGs only if a future renderer-stability requirement justifies the review and maintenance cost
-
-### Test Plan If Golden Images Are Added Later
-- [ ] Generate baselines from a known release tag, not from an arbitrary working tree
-- [ ] Keep the golden matrix intentionally small to avoid blocking normal renderer evolution
-- [ ] Use tolerance-based comparison and record the diff artifact on failure
-- [ ] Run the golden-image job manually or on release branches before enabling it on every PR
-- [ ] Document the workflow for intentionally accepting renderer changes
+| KI | Issue | Status |
+|----|-------|--------|
+| KI1 | Public API Surface | ✓ Reviewed, acceptable for v1 |
+| KI2 | Configuration Validation | ✓ Implemented (`RenderConfig::validate()`) |
+| KI3 | Batch Error Aggregation | ✓ Implemented (severity-based exit codes) |
+| KI4 | 3MF Compatibility | ✓ Functional, needs README docs |
+| KI5 | OBJ Compatibility | ✓ Functional, needs README docs |
+| KI6 | User-Facing Terminology | ✓ Implemented (`RenderError::Mesh`) |
+| KI7 | Release Hygiene | Mostly done, needs publish dry-run |
+| KI8 | GIF Memory Use | ✓ Acceptable, needs README note |
+| KI9 | Rasterizer Robustness | ✓ Acceptable (backface culling expected) |
+| KI10 | Degenerate Geometry | ✓ Implemented (zero-area skip, NaN reject) |
+| KI11 | Output Error Handling | ✓ Implemented |
 
 ---
 
@@ -792,13 +99,13 @@ Full golden-image comparison is still useful, but it should not be a default v1 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 glam = "0.29"
-image = { version = "0.25", default-features = false, features = ["png", "gif"] }  # gif added in M15
+image = { version = "0.25", default-features = false, features = ["png", "gif"] }
 memmap2 = "0.9"
-quick-xml = "0.37"  # M14: 3MF XML parsing
+quick-xml = "0.37"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-zip = "2"  # M14: 3MF ZIP handling
+zip = "2"
 
 [dev-dependencies]
 tempfile = "3"

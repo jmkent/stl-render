@@ -213,7 +213,7 @@ fn test_help_flag() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Render STL and 3MF files to PNG"));
+    assert!(stdout.contains("Render STL, OBJ, and 3MF files to PNG"));
     assert!(
         stdout.contains("tan, blue-grey"),
         "Help should list material color presets: {}",
@@ -2051,4 +2051,160 @@ fn test_animate_builder_api() {
 
     let data = std::fs::read(&output).unwrap();
     assert!(data.starts_with(b"GIF89a") || data.starts_with(b"GIF87a"));
+}
+
+// KI2: Configuration validation tests
+#[test]
+fn test_zero_width_returns_config_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.png");
+
+    let result = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output.to_str().unwrap(),
+            "--width",
+            "0",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "zero width should return exit code 1"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("width must be greater than 0"),
+        "error should mention width: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_zero_height_returns_config_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.png");
+
+    let result = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output.to_str().unwrap(),
+            "--height",
+            "0",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "zero height should return exit code 1"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("height must be greater than 0"),
+        "error should mention height: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_zero_frames_with_animate_returns_config_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.gif");
+
+    let result = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "-o",
+            output.to_str().unwrap(),
+            "--animate",
+            "--frames",
+            "0",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "zero frames should return exit code 1"
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("frames must be greater than 0"),
+        "error should mention frames: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_negative_padding_returns_config_error() {
+    // Note: CLI parsing with --padding -0.1 fails at clap level because -0 looks like a flag.
+    // Testing validation via library API instead.
+    use stl_render::{RenderConfigBuilder, render_to_image};
+
+    let config = RenderConfigBuilder::new("fixtures/cube.stl", "/tmp/out.png")
+        .padding(-0.1)
+        .build();
+
+    let result = render_to_image(&config);
+    assert!(result.is_err(), "negative padding should be rejected");
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("padding cannot be negative"),
+        "error should mention padding: {}",
+        msg
+    );
+}
+
+#[test]
+fn test_excessive_padding_returns_config_error() {
+    // Test validation via library API
+    use stl_render::{RenderConfigBuilder, render_to_image};
+
+    let config = RenderConfigBuilder::new("fixtures/cube.stl", "/tmp/out.png")
+        .padding(1.5)
+        .build();
+
+    let result = render_to_image(&config);
+    assert!(result.is_err(), "excessive padding should be rejected");
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("padding cannot exceed 1.0"),
+        "error should mention padding limit: {}",
+        msg
+    );
+}
+
+// KI3: Batch error aggregation test - input errors take precedence
+#[test]
+fn test_batch_input_error_takes_precedence() {
+    let dir = tempfile::tempdir().unwrap();
+    let outdir = dir.path().join("output");
+    std::fs::create_dir(&outdir).unwrap();
+
+    // Mix valid file with nonexistent file
+    let result = stl_render()
+        .args([
+            "fixtures/cube.stl",
+            "fixtures/nonexistent.stl",
+            "-o",
+            &format!("{}/", outdir.display()),
+        ])
+        .output()
+        .unwrap();
+
+    // Should return exit code 2 (input error) not 0 (success) or 3 (output error)
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "batch with input error should return exit code 2"
+    );
 }

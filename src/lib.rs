@@ -1,6 +1,6 @@
 //! # stl-render
 //!
-//! A fast, headless library for rendering STL files to PNG images.
+//! A fast, headless library for rendering 3D mesh files (STL, OBJ, 3MF) to PNG images.
 //!
 //! ## Quick Start
 //!
@@ -154,8 +154,8 @@ impl Iterator for MeshTriangleIter<'_> {
 
 #[derive(Debug, Error)]
 pub enum RenderError {
-    #[error("STL error: {0}")]
-    Stl(#[from] StlError),
+    #[error("mesh error: {0}")]
+    Mesh(#[from] StlError),
 
     #[error("output error: {0}")]
     Output(#[from] output::OutputError),
@@ -169,13 +169,13 @@ impl RenderError {
     pub fn exit_code(&self) -> std::process::ExitCode {
         match self {
             Self::Config(_) => std::process::ExitCode::from(1),
-            Self::Stl(_) => std::process::ExitCode::from(2),
+            Self::Mesh(_) => std::process::ExitCode::from(2),
             Self::Output(_) => std::process::ExitCode::from(3),
         }
     }
 }
 
-/// Render an STL file to an image without writing to disk.
+/// Render a mesh file to an image without writing to disk.
 ///
 /// Returns the rendered image and metadata. Use this when you want to
 /// manipulate the image further or encode it yourself.
@@ -199,6 +199,9 @@ pub fn render_to_image(
     config: &RenderConfig,
 ) -> Result<(image::RgbaImage, RenderMetadata), RenderError> {
     use cli::{ViewConfig, ViewPreset};
+
+    // Validate configuration
+    config.validate().map_err(RenderError::Config)?;
 
     // Check if this is a grid render
     if let ViewConfig::Preset(ViewPreset::PrintGrid) = config.view {
@@ -237,7 +240,7 @@ pub fn render_to_image(
     Ok((image, metadata))
 }
 
-/// Render an STL file to a PNG file.
+/// Render a mesh file to a PNG file.
 ///
 /// This is the main entry point for CLI-style rendering. For library use
 /// without file I/O, see [`render_to_image`].
@@ -257,6 +260,9 @@ pub fn render_to_image(
 /// # Ok::<(), stl_render::RenderError>(())
 /// ```
 pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError> {
+    // Validate configuration
+    config.validate().map_err(RenderError::Config)?;
+
     // Route to animated render if enabled
     if config.animate {
         return render_animated(config);
@@ -547,7 +553,7 @@ fn open_mesh_reader(config: &RenderConfig) -> Result<MeshReader, RenderError> {
     }
 
     if !config.input.exists() {
-        return Err(RenderError::Stl(StlError::Io(std::io::Error::new(
+        return Err(RenderError::Mesh(StlError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("input file not found: {}", config.input.display()),
         ))));
@@ -561,7 +567,7 @@ fn validate_renderable_geometry(
     triangle_count: u64,
 ) -> Result<(), RenderError> {
     if triangle_count == 0 || !bounds.is_valid() {
-        return Err(RenderError::Stl(StlError::InvalidFormat(
+        return Err(RenderError::Mesh(StlError::InvalidFormat(
             "STL contains no triangles".into(),
         )));
     }
@@ -579,7 +585,7 @@ fn validate_renderable_geometry(
         dims.z,
     ];
     if values.iter().any(|value| !value.is_finite()) {
-        return Err(RenderError::Stl(StlError::InvalidFormat(
+        return Err(RenderError::Mesh(StlError::InvalidFormat(
             "STL bounds contain non-finite values".into(),
         )));
     }

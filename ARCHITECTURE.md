@@ -2,6 +2,28 @@
 
 Module responsibilities, data flow, and design rationale for stl-render.
 
+## Supported Formats
+
+| Format | Extensions | Memory Model | Notes |
+|--------|------------|--------------|-------|
+| STL Binary | .stl | Streaming (mmap) | Fastest, handles 500MB+ |
+| STL ASCII | .stl | Streaming (mmap) | Auto-detected from content |
+| OBJ | .obj | Buffered | Text-based, fan triangulation |
+| 3MF | .3mf | Buffered | ZIP with XML mesh data |
+
+Format is auto-detected from file content, not extension:
+1. ZIP magic `PK\x03\x04` → 3MF
+2. OBJ keywords (`v `, `f `) → OBJ
+3. Otherwise → STL
+
+### Format Limitations
+
+**3MF:** Only mesh geometry is extracted (vertices and triangles). Build items, transforms, component instances, units, and materials are ignored. Multi-object files render all objects merged.
+
+**OBJ:** Negative (relative) indices, line continuations, and mid-line comments are not supported. Materials and textures are ignored.
+
+---
+
 ## Design Rationale
 
 ### Why Software Rasterizer
@@ -76,17 +98,23 @@ Alternative approaches rejected:
 ```
 src/
   main.rs           # Entry point, error handling, exit codes
-  cli.rs            # Argument parsing with clap, validation
-  stl/
-    mod.rs          # Public interface: StlReader, Triangle
-    parser.rs       # Format detection, streaming iteration
-    binary.rs       # Binary STL parsing
-    ascii.rs        # ASCII STL parsing
+  cli.rs            # Argument parsing, validation, RenderConfig
+  lib.rs            # Public API, MeshReader, render functions
   mesh.rs           # BoundingBox, normal computation
   camera.rs         # ViewPreset, Camera, projection math
-  render.rs         # DepthBuffer, triangle rasterization, shading
-  output.rs         # PNG encoding, metadata JSON
-  lib.rs            # Public API for library consumers
+  render.rs         # Framebuffer, triangle rasterization, shading
+  output.rs         # PNG/GIF encoding, metadata JSON
+  stl/
+    mod.rs          # StlReader, Triangle, TriangleIter
+    parser.rs       # Format detection
+    binary.rs       # Binary STL parsing (streaming)
+    ascii.rs        # ASCII STL parsing (streaming)
+  obj/
+    mod.rs          # ObjReader, ObjIter
+    parser.rs       # OBJ parsing (buffered)
+  tmf3/
+    mod.rs          # Tmf3Reader, Tmf3Iter
+    parser.rs       # 3MF ZIP/XML parsing (buffered)
 ```
 
 ---
@@ -357,31 +385,106 @@ Shading: `color = material_color * max(0, dot(normal, light_dir))`
 
 ### output.rs
 
-Final output:
+PNG and GIF encoding:
 ```rust
 pub fn write_png(image: &RgbaImage, path: &Path) -> Result<(), OutputError>;
+pub fn write_gif(frames: &[RgbaImage], path: &Path, delay_ms: u16) -> Result<(), OutputError>;
 pub fn write_metadata(meta: &RenderMetadata, path: &Path) -> Result<(), OutputError>;
-
-pub struct RenderMetadata {
-    pub input_file: String,
-    pub triangle_count: u64,
-    pub bounding_box: BoundingBox,
-    pub dimensions: [f32; 3],
-    pub render_config: RenderConfig,
-}
 ```
+
+---
+
+## Animated GIF Output
+
+When `--animate` is specified, `render_animated()` produces a rotating preview:
+
+1. Parse mesh once, compute bounds once
+2. Compute bounding sphere radius for consistent scaling
+3. For each frame (default 16):
+   - Compute azimuth: `(frame / total) * 360°`
+   - Create camera with fixed-scale projection (uses sphere radius)
+   - Render frame
+4. Encode all frames as GIF with infinite loop
+
+The bounding sphere radius ensures consistent viewport across all rotation angles (no zoom in/out effect).
+
+---
+
+## Material Color Presets
+
+CLI accepts named presets or hex colors:
+```bash
+--material-color tan
+--material-color "#ff6600"
+```
+
+| Preset | Hex | RGB |
+|--------|-----|-----|
+| tan | #C19A6B | 193, 154, 107 |
+| blue-grey | #708090 | 112, 128, 144 |
+| white | #FFFFFF | 255, 255, 255 |
+| black | #1A1A1A | 26, 26, 26 |
+| red | #CC3333 | 204, 51, 51 |
+| orange | #FF6600 | 255, 102, 0 |
+| green | #339933 | 51, 153, 51 |
+| blue | #3366CC | 51, 102, 204 |
+| grey/gray | #808080 | 128, 128, 128 |
+| silver | #C0C0C0 | 192, 192, 192 |
+
+---
+
+## Configuration Validation
+
+`RenderConfig::validate()` checks:
+- Width and height > 0
+- Padding in range [0.0, 1.0]
+- Frames > 0 when animate=true
+- AA-scaled dimensions don't overflow u32
+
+Called automatically by `render()` and `render_to_image()`. Returns `RenderError::Config` with clear message on failure.
 
 ### lib.rs
 
-Public API:
-```rust
-pub use crate::cli::RenderConfig;
-pub use crate::stl::{StlReader, Triangle, StlError};
-pub use crate::mesh::BoundingBox;
-pub use crate::output::RenderMetadata;
+Unified mesh reader and public API:
 
+```rust
+/// Format-agnostic mesh reader with auto-detection
+pub enum MeshReader {
+    Stl(StlReader),
+    Tmf3(Tmf3Reader),
+    Obj(ObjReader),
+}
+
+impl MeshReader {
+    pub fn open(path: &Path) -> Result<Self, StlError>;
+    pub fn from_reader<R: Read>(reader: R) -> Result<Self, StlError>;
+    pub fn triangles(&self) -> Result<MeshTriangleIter<'_>, StlError>;
+}
+
+/// Public API functions
 pub fn render(config: &RenderConfig) -> Result<RenderMetadata, RenderError>;
+pub fn render_to_image(config: &RenderConfig) -> Result<(RgbaImage, RenderMetadata), RenderError>;
+pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderError>;
 ```
+
+### obj/parser.rs
+
+OBJ parsing (buffered in memory):
+```rust
+pub fn parse_obj(data: &[u8]) -> Result<Vec<Triangle>, StlError>;
+pub fn is_obj_format(data: &[u8]) -> bool;
+```
+
+Handles `v` (vertex) and `f` (face) lines. Faces with >3 vertices are triangulated using fan triangulation.
+
+### tmf3/parser.rs
+
+3MF parsing (ZIP + XML):
+```rust
+pub fn parse_3mf<R: Read + Seek>(reader: R) -> Result<Vec<Triangle>, StlError>;
+```
+
+Opens ZIP archive, finds `3D/*.model` file, parses XML to extract vertices and triangles. Multiple `<object>` elements are merged into a single triangle list.
 
 ---
 
@@ -406,22 +509,26 @@ Total RSS should stay under 200MB even for 500MB+ input files.
 Each module defines its own error type:
 
 ```rust
-// stl/mod.rs
+// stl/mod.rs - used for all mesh formats
 #[derive(Debug, thiserror::Error)]
 pub enum StlError {
     #[error("failed to open file: {0}")]
     Io(#[from] std::io::Error),
-    #[error("invalid STL format: {0}")]
+    #[error("invalid format: {0}")]
     InvalidFormat(String),
     #[error("unexpected end of file")]
     UnexpectedEof,
+    #[error("ZIP error: {0}")]
+    ZipError(String),
+    #[error("3MF XML error: {0}")]
+    Tmf3ParseError(String),
 }
 
 // Top-level
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
-    #[error("STL error: {0}")]
-    Stl(#[from] StlError),
+    #[error("mesh error: {0}")]
+    Mesh(#[from] StlError),  // handles STL, OBJ, and 3MF errors
     #[error("output error: {0}")]
     Output(#[from] OutputError),
     #[error("invalid config: {0}")]
@@ -432,12 +539,14 @@ impl RenderError {
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Self::Config(_) => ExitCode::from(1),
-            Self::Stl(_) => ExitCode::from(2),
+            Self::Mesh(_) => ExitCode::from(2),
             Self::Output(_) => ExitCode::from(3),
         }
     }
 }
 ```
+
+**Batch error aggregation:** Returns the highest severity error (lowest exit code). Input errors (2) take precedence over output errors (3).
 
 ---
 
@@ -447,11 +556,13 @@ impl RenderError {
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 glam = "0.29"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif"] }
 memmap2 = "0.9"
+quick-xml = "0.37"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+zip = "2"
 ```
 
 No GPU dependencies. No runtime requirements beyond libc.
@@ -462,8 +573,10 @@ No GPU dependencies. No runtime requirements beyond libc.
 |-------|---------|---------------------|
 | clap | CLI parsing | Standard, derive macros |
 | glam | Vec3/Mat4 math | Fast, minimal, ergonomic |
-| image | PNG encoding | Standard, minimal features enabled |
+| image | PNG/GIF encoding | Standard, minimal features |
 | memmap2 | Memory-mapped files | Maintained fork of memmap |
+| quick-xml | 3MF XML parsing | Fast, low-allocation |
+| zip | 3MF archive handling | Standard, handles deflate |
 | thiserror | Error types | Derive macro, zero runtime cost |
 
 Avoided:

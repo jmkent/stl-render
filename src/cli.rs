@@ -55,7 +55,7 @@ pub enum CliError {
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "stl-render")]
-#[command(about = "Render STL and 3MF files to PNG images")]
+#[command(about = "Render STL, OBJ, and 3MF files to PNG images")]
 #[command(version)]
 pub struct Args {
     /// Input mesh file(s) - STL, OBJ, or 3MF; directories expand to supported files (use - for stdin)
@@ -281,6 +281,52 @@ pub struct RenderConfig {
     pub frames: u32,
     /// Frame delay in milliseconds for animated GIF
     pub frame_delay: u16,
+}
+
+impl RenderConfig {
+    /// Validate configuration values, returning an error for invalid combinations.
+    ///
+    /// This is called automatically by [`crate::render`] and [`crate::render_to_image`],
+    /// but can be called explicitly for early validation.
+    pub fn validate(&self) -> Result<(), String> {
+        // Dimension validation
+        if self.width == 0 {
+            return Err("width must be greater than 0".into());
+        }
+        if self.height == 0 {
+            return Err("height must be greater than 0".into());
+        }
+
+        // AA overflow protection
+        let aa_scale: u32 = match self.aa {
+            AntiAliasing::None => 1,
+            AntiAliasing::X2 => 2,
+            AntiAliasing::X4 => 4,
+        };
+        if self.width.checked_mul(aa_scale).is_none()
+            || self.height.checked_mul(aa_scale).is_none()
+        {
+            return Err(format!(
+                "dimensions {}x{} with {}x AA would overflow",
+                self.width, self.height, aa_scale
+            ));
+        }
+
+        // Animation validation (only when animate is true)
+        if self.animate && self.frames == 0 {
+            return Err("animation frames must be greater than 0".into());
+        }
+
+        // Padding validation
+        if self.padding < 0.0 {
+            return Err("padding cannot be negative".into());
+        }
+        if self.padding > 1.0 {
+            return Err("padding cannot exceed 1.0 (100%)".into());
+        }
+
+        Ok(())
+    }
 }
 
 /// Builder for [`RenderConfig`] with sensible defaults.

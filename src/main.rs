@@ -83,11 +83,22 @@ fn run() -> Result<(), RenderError> {
         }
     }
 
-    // Return worst error code
-    if let Some((_, worst_error)) = errors.into_iter().next() {
-        Err(worst_error)
-    } else {
+    // Return highest severity error (lower exit code = more severe: 1=config, 2=input, 3=output)
+    if errors.is_empty() {
         Ok(())
+    } else {
+        let worst = errors
+            .into_iter()
+            .min_by_key(|(_, e)| {
+                // Convert ExitCode to u8 for comparison (there's no From<ExitCode> for u8)
+                match &e {
+                    RenderError::Config(_) => 1u8,
+                    RenderError::Mesh(_) => 2u8,
+                    RenderError::Output(_) => 3u8,
+                }
+            })
+            .map(|(_, e)| e);
+        Err(worst.unwrap())
     }
 }
 
