@@ -26,34 +26,36 @@ Format is auto-detected from file content, not extension:
 
 ## Design Rationale
 
+### Primary Goals
+
+Primary Goals
+
+This project provides a narrow, scriptable rendering pipeline for generating consistent visualizations of STL and mesh assets.
+
+Unlike thumbnail-focused utilities or heavyweight 3D authoring tools, the focus is on deterministic, batch-friendly rendering with configurable output and minimal operational overhead.
+
+Core features:
+
+- Lightweight - Single static binary with headless rendering support
+- Batch-oriented - Efficient processing of large model collections
+- Deterministic - Stable framing, lighting, orientation, and output across runs
+- Configurable - Parameterized rendering without requiring a full 3D application
+- Rich previews - Static renders and lightweight animated visualizations
+- Zero configuration - Automatic mesh loading, framing, and sensible defaults
+
 ### Why Software Rasterizer
 
-Evaluated three options:
+GPU rendering (wgpu, OpenGL) requires platform-specific context setup and produces driver-dependent output. For generating consistent preview assets across machines and CI environments, software rendering is simpler and more reliable.
 
-| Option | Pros | Cons |
-|--------|------|------|
-| wgpu | Modern, cross-platform | Headless varies by platform, driver-dependent output |
-| OpenGL/glow | Mature | Context creation painful, platform-sensitive |
-| **Software** | Headless by design, deterministic, no GPU deps | More implementation work |
+Performance is adequate: at 512x512, a naive rasterizer handles millions of triangles per second. Typical models (10K-100K triangles) render in milliseconds.
 
-For this use case, software rendering wins:
-- No GPU context setup headaches in CI/containers
-- Deterministic output (no driver variance)
-- Works everywhere without GPU libraries
-- For 500MB+ STLs, GPU would need chunked uploads anyway
+### Why Custom Parsers
 
-Performance is not a concern: at 512x512, even a naive rasterizer handles millions of triangles per second. A 500MB binary STL (~10M triangles) renders in <2 seconds single-threaded.
+**STL:** Existing crates like `stl_io` load the entire mesh into memory. A custom streaming parser via memory-mapped I/O keeps memory usage bounded regardless of file size, with no external dependencies for the core format.
 
-### Why Custom STL Parser
+**OBJ/3MF:** These formats require buffering (ZIP decompression, text parsing), so we use `zip` and `quick-xml` crates. The triangle interface remains uniform across all formats.
 
-Existing crates like `stl_io` load the entire mesh into memory. For 500MB+ files, we need streaming. Rolling a custom parser:
-
-- Zero external deps for core parsing
-- Streaming via memory-mapped I/O
-- Full control over error handling
-- STL format is trivial (~300 lines for both binary and ASCII)
-
-Binary format:
+STL binary format (for reference):
 ```
 [80 bytes] header (ignored)
 [4 bytes]  triangle count (u32 LE)
@@ -63,33 +65,14 @@ Binary format:
   [2 bytes]  attribute (ignored)
 ```
 
-ASCII format:
-```
-solid [name]
-  facet normal nx ny nz
-    outer loop
-      vertex x y z
-      vertex x y z
-      vertex x y z
-    endloop
-  endfacet
-  ...
-endsolid [name]
-```
-
 ### Why Two-Pass Rendering
 
-Camera auto-framing requires knowing the model's bounding box before rendering. Without storing the full mesh, we must:
+Camera auto-framing requires knowing the model's bounding box before rendering:
 
 1. **Pass 1:** Stream triangles, accumulate bounds
 2. **Pass 2:** Stream triangles again, transform and rasterize
 
-Memory-mapping makes this efficient: if the file fits in page cache, the second pass is essentially free.
-
-Alternative approaches rejected:
-- Store full mesh: 500MB+ memory usage
-- User-provided bounds: poor UX
-- Fixed camera: can't auto-fit
+For STL, memory-mapping makes this efficient. For OBJ/3MF, the buffered triangles are iterated twice from memory.
 
 ---
 
@@ -490,17 +473,17 @@ Opens ZIP archive, finds `3D/*.model` file, parses XML to extract vertices and t
 
 ## Memory Budget
 
-For 500MB+ STLs, memory usage is bounded by framebuffer, not geometry:
+Memory usage is dominated by the framebuffer, not input geometry:
 
 | Component | Memory |
 |-----------|--------|
-| mmap file | 0 (kernel manages pages) |
-| Pass 1 working set | ~100 bytes |
-| Framebuffer (512×512, no AA) | 4 MB |
-| Framebuffer (1024×1024, 2x AA) | 16 MB |
-| Framebuffer (2048×2048, 4x AA) | 64 MB |
+| STL (mmap) | ~0 (kernel manages pages) |
+| OBJ/3MF (buffered) | ~file size |
+| Framebuffer (512×512, 2x AA) | ~4 MB |
+| Framebuffer (1024×1024, 4x AA) | ~16 MB |
+| Animated GIF (16 frames, 512×512) | ~16 MB |
 
-Total RSS should stay under 200MB even for 500MB+ input files.
+For typical models and default settings, expect 20-50 MB RSS. Large STL files (500MB+) work via streaming without proportional memory growth. OBJ and 3MF are buffered in memory.
 
 ---
 

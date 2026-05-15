@@ -28,6 +28,9 @@ stl-render model.3mf -o preview.gif --animate
 | Batch mode with error handling | ✓ |
 | Library API | ✓ |
 | Configuration validation | ✓ |
+| Release packaging (M16) | Planned |
+| Dimension overlay (M17) | Planned |
+| Watermark overlay (M18) | Planned |
 
 ---
 
@@ -63,6 +66,146 @@ stl-render model.3mf -o preview.gif --animate
 - [ ] Test downloaded binaries on each platform
 
 **Acceptance:** Push tag triggers workflow; all platforms build; GitHub Release and crates.io publish succeed.
+
+---
+
+### M17: Dimension Overlay
+
+**Goal:** Project physical dimensions (X/Y/Z extents in mm) onto rendered output to show real-world print size.
+
+#### Use Case
+
+When browsing a model collection, knowing actual print dimensions at a glance helps with print planning. Currently requires opening models in a slicer or CAD tool.
+
+#### CLI Interface
+
+```bash
+stl-render model.stl -o preview.png --dimensions
+stl-render model.stl -o preview.png --dimensions --units in
+stl-render model.stl -o preview.png --dimensions --dimension-color "#ffffff"
+```
+
+**Flags:**
+- `--dimensions` - Enable dimension overlay
+- `--units <mm|in>` - Display units (default: mm)
+- `--dimension-color <hex>` - Line/text color (default: auto-contrast)
+
+#### Visual Design
+
+```
+┌────────────────────────────┐
+│                            │
+│     ┌─────────────┐        │
+│     │             │ ↕ 45mm │
+│     │   [model]   │        │
+│     │             │        │
+│     └─────────────┘        │
+│       ←── 62mm ──→         │
+│                            │
+│              depth: 38mm   │
+└────────────────────────────┘
+```
+
+- X/Y dimensions as lines with end caps along model edges
+- Z (depth) as text label (can't draw orthogonal line in 2D projection)
+- Auto-contrast: white text with dark outline, or vice versa
+- Position lines outside model bounds with small margin
+
+#### Implementation
+
+**Text rendering options:**
+1. **Embedded bitmap font** - No deps, ~2KB for digits/units, pixel-perfect at small sizes
+2. **`ab_glyph` crate** - TrueType rendering, more flexible, adds ~50KB
+
+Recommend option 1 for v1 (lightweight goal), with option to upgrade later.
+
+**Drawing:**
+- Use existing `image` crate for pixel manipulation
+- Draw lines with configurable thickness (1-2px)
+- Render dimension text at line endpoints
+
+**Files to modify:**
+- `src/cli.rs` - Add flags
+- `src/output.rs` or new `src/overlay.rs` - Drawing logic
+- `src/lib.rs` - Apply overlay after render, before encode
+
+#### Test Plan
+
+- [ ] Dimension lines visible on rendered output
+- [ ] Dimensions match metadata bounding box values
+- [ ] Units display correctly (mm/in conversion)
+- [ ] Works with transparent and solid backgrounds
+- [ ] Works with animated GIF (overlay on each frame)
+- [ ] Auto-contrast readable against light and dark models
+
+**Acceptance:** `--dimensions` shows accurate X/Y/Z measurements overlaid on render.
+
+---
+
+### M18: Watermark Overlay
+
+**Goal:** Composite a creator logo/watermark onto output for branding model previews.
+
+#### Use Case
+
+Creators sharing models want consistent branding. Manual watermarking in image editors doesn't scale for batch processing collections.
+
+#### CLI Interface
+
+```bash
+stl-render model.stl -o preview.png --watermark logo.png
+stl-render model.stl -o preview.png --watermark logo.png --watermark-position bottom-right
+stl-render model.stl -o preview.png --watermark logo.png --watermark-opacity 50 --watermark-scale 20
+```
+
+**Flags:**
+- `--watermark <path>` - Path to watermark image (PNG with transparency)
+- `--watermark-position <pos>` - Placement: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `center` (default: bottom-right)
+- `--watermark-opacity <0-100>` - Opacity percentage (default: 100)
+- `--watermark-scale <percent>` - Scale relative to output width (default: 15)
+- `--watermark-margin <px>` - Margin from edges (default: 10)
+
+#### Implementation
+
+**Image compositing:**
+- Load watermark PNG (must support alpha channel)
+- Scale to target size based on output dimensions
+- Alpha-blend onto rendered frame at specified position
+- Apply opacity by multiplying alpha channel
+
+**Algorithm:**
+```rust
+fn apply_watermark(image: &mut RgbaImage, watermark: &RgbaImage, config: &WatermarkConfig) {
+    let scaled = resize(watermark, target_width, target_height);
+    let (x, y) = compute_position(image.dimensions(), scaled.dimensions(), config);
+    
+    for (wx, wy, pixel) in scaled.enumerate_pixels() {
+        let dst = image.get_pixel_mut(x + wx, y + wy);
+        *dst = alpha_blend(*dst, *pixel, config.opacity);
+    }
+}
+```
+
+**Files to modify:**
+- `src/cli.rs` - Add flags, watermark config
+- `src/output.rs` or `src/overlay.rs` - Watermark compositing
+- `src/lib.rs` - Apply watermark after render
+
+**Dependencies:**
+- No new deps needed; `image` crate handles PNG loading and pixel manipulation
+
+#### Test Plan
+
+- [ ] Watermark appears at correct position
+- [ ] Opacity reduces watermark visibility correctly
+- [ ] Scale produces expected watermark size
+- [ ] Margin offsets from edges correctly
+- [ ] Transparency preserved (watermark alpha + model)
+- [ ] Works with animated GIF (watermark on each frame)
+- [ ] Error on missing/invalid watermark file
+- [ ] Works in batch mode (same watermark on all outputs)
+
+**Acceptance:** `--watermark logo.png` composites logo at specified position with configurable opacity and scale.
 
 ---
 
