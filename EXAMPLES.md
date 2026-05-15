@@ -8,6 +8,70 @@ This document showcases various rendering options available in stl-render.
 stl-render model.stl -o preview.png
 ```
 
+## Supported Formats
+
+stl-render supports STL (binary and ASCII), OBJ, and 3MF files with automatic format detection.
+
+### Format Comparison
+
+All formats produce identical renders for the same geometry:
+
+| STL (binary/ASCII) | OBJ (text) | 3MF (ZIP/XML) |
+|--------------------|------------|---------------|
+| ![STL Sphere](examples/format_stl_sphere.png) | ![OBJ Sphere](examples/format_obj_sphere.png) | ![3MF Sphere](examples/format_3mf_sphere.png) |
+
+```bash
+stl-render model.stl -o preview.png  # Binary or ASCII STL
+stl-render model.obj -o preview.png  # Wavefront OBJ
+stl-render model.3mf -o preview.png  # 3MF package
+```
+
+Format is auto-detected from file content, not extension.
+
+### 3MF Features
+
+3MF files support advanced features like multi-object scenes and assemblies:
+
+| Multi-Object | Assembly with Components |
+|--------------|--------------------------|
+| ![Multi Object](examples/format_3mf_multi.png) | ![Assembly](examples/format_3mf_assembly.png) |
+
+```bash
+# Multi-object files render all objects with correct positioning
+stl-render multi_object.3mf -o preview.png --view print
+
+# Assemblies with components and transforms work correctly
+stl-render assembly.3mf -o preview.png --view iso
+```
+
+3MF support includes:
+- Build items with transform matrices
+- Component references with nested transforms
+- Unit metadata (mm, cm, inch, foot, micron)
+- Colorgroups with per-face and per-vertex colors
+
+### 3MF Color Support
+
+3MF files with embedded colors are rendered automatically:
+
+```bash
+# Render with embedded mesh colors (default)
+stl-render colored_model.3mf -o preview.png
+
+# Ignore mesh colors, use uniform material color
+stl-render colored_model.3mf -o preview.png --no-mesh-colors --material-color tan
+
+# List colors in a 3MF file
+stl-render model.3mf --list-colors
+```
+
+Output of `--list-colors`:
+```text
+0: #ff0000 (red)
+1: #00ff00 (green)
+2: #0000ff (blue)
+```
+
 ## 3DBenchy
 
 [3DBenchy](https://www.3dbenchy.com) is a standard public domain 3D printing benchmark model. These examples demonstrate stl-render's capabilities with a real-world print model (225K triangles).
