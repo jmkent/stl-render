@@ -9,16 +9,27 @@ Module responsibilities, data flow, and design rationale for stl-render.
 | STL Binary | .stl | Streaming (mmap) | Fastest, handles 500MB+ |
 | STL ASCII | .stl | Streaming (mmap) | Auto-detected from content |
 | OBJ | .obj | Buffered | Text-based, fan triangulation |
-| 3MF | .3mf | Buffered | ZIP with XML mesh data |
+| 3MF | .3mf | Buffered | Full scene graph support |
 
 Format is auto-detected from file content, not extension:
 1. ZIP magic `PK\x03\x04` → 3MF
 2. OBJ keywords (`v `, `f `) → OBJ
 3. Otherwise → STL
 
-### Format Limitations
+### 3MF Scene Graph
 
-**3MF:** Only mesh geometry is extracted (vertices and triangles). Build items, transforms, component instances, units, and materials are ignored. Multi-object files render all objects merged.
+The 3MF parser (`src/tmf3/`) supports the full Core specification scene graph:
+
+- **Build items** (`<build><item>`) with transform matrices
+- **Component references** (`<components><component>`) with nested transforms
+- **Unit metadata** (`<model unit="...">`) - mm, cm, inch, foot, micron
+- **Cycle detection** for component references (100-depth limit)
+
+Transform matrices are accumulated through the hierarchy and applied to vertices during parsing. Multi-object files render all referenced objects with correct positioning.
+
+**Not supported:** Materials extension (colors, textures). Renders use `--material-color`.
+
+### Format Limitations
 
 **OBJ:** Negative (relative) indices, line continuations, and mid-line comments are not supported. Materials and textures are ignored.
 
@@ -27,8 +38,6 @@ Format is auto-detected from file content, not extension:
 ## Design Rationale
 
 ### Primary Goals
-
-Primary Goals
 
 This project provides a narrow, scriptable rendering pipeline for generating consistent visualizations of STL and mesh assets.
 
@@ -47,13 +56,13 @@ Core features:
 
 GPU rendering (wgpu, OpenGL) requires platform-specific context setup and produces driver-dependent output. For generating consistent preview assets across machines and CI environments, software rendering is simpler and more reliable.
 
-Performance is adequate: at 512x512, a naive rasterizer handles millions of triangles per second. Typical models (10K-100K triangles) render in milliseconds.
+Performance is adequate: at 512×512, the rasterizer sustains ~14 million triangles/second. Models up to 1M triangles render in under 100ms. See [Performance](#performance) for benchmarks.
 
 ### Why Custom Parsers
 
 **STL:** Existing crates like `stl_io` load the entire mesh into memory. A custom streaming parser via memory-mapped I/O keeps memory usage bounded regardless of file size, with no external dependencies for the core format.
 
-**OBJ/3MF:** These formats require buffering (ZIP decompression, text parsing), so we use `zip` and `quick-xml` crates. The triangle interface remains uniform across all formats.
+**OBJ/3MF:** These formats require buffering (ZIP decompression, text parsing), so we use `zip` and `quick-xml` crates. For 3MF, the parser resolves the full scene graph (build items, components, transforms) rather than relying on external libraries. The triangle interface remains uniform across all formats.
 
 STL binary format (for reference):
 ```
@@ -96,8 +105,8 @@ src/
     mod.rs          # ObjReader, ObjIter
     parser.rs       # OBJ parsing (buffered)
   tmf3/
-    mod.rs          # Tmf3Reader, Tmf3Iter
-    parser.rs       # 3MF ZIP/XML parsing (buffered)
+    mod.rs          # Tmf3Reader, Tmf3Iter, Unit3mf
+    parser.rs       # 3MF scene graph parsing (transforms, builds, components)
 ```
 
 ---
@@ -462,28 +471,71 @@ Handles `v` (vertex) and `f` (face) lines. Faces with >3 vertices are triangulat
 
 ### tmf3/parser.rs
 
-3MF parsing (ZIP + XML):
+3MF parsing with scene graph resolution:
 ```rust
-pub fn parse_3mf<R: Read + Seek>(reader: R) -> Result<Vec<Triangle>, StlError>;
+pub enum Unit3mf {
+    Millimeter, Centimeter, Inch, Foot, Micron,
+}
+
+pub struct Parse3mfResult {
+    pub triangles: Vec<Triangle>,
+    pub unit: Unit3mf,
+}
+
+pub fn parse_3mf<R: Read + Seek>(reader: R) -> Result<Parse3mfResult, StlError>;
 ```
 
-Opens ZIP archive, finds `3D/*.model` file, parses XML to extract vertices and triangles. Multiple `<object>` elements are merged into a single triangle list.
+Parse flow:
+1. Open ZIP archive, find `3D/*.model` file
+2. Parse XML to collect objects, components, and build items
+3. Resolve scene graph: follow build items → objects → components recursively
+4. Apply accumulated transform matrices to vertices
+5. Return triangles with unit metadata
+
+Transform format (3MF 3x4 row-major):
+```
+"m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32"
+```
+Where m30/m31/m32 are translation components.
 
 ---
 
-## Memory Budget
+## Performance
 
-Memory usage is dominated by the framebuffer, not input geometry:
+### Render Time
 
-| Component | Memory |
-|-----------|--------|
-| STL (mmap) | ~0 (kernel manages pages) |
-| OBJ/3MF (buffered) | ~file size |
-| Framebuffer (512×512, 2x AA) | ~4 MB |
-| Framebuffer (1024×1024, 4x AA) | ~16 MB |
-| Animated GIF (16 frames, 512×512) | ~16 MB |
+Benchmarks on Apple Silicon (M-series), release build, 512×512 output with 2x AA:
 
-For typical models and default settings, expect 20-50 MB RSS. Large STL files (500MB+) work via streaming without proportional memory growth. OBJ and 3MF are buffered in memory.
+| Model Complexity | File Size | Triangles | Time |
+|------------------|-----------|-----------|------|
+| Simple component | ~1 MB | 18K | <10ms |
+| Small part | ~2 MB | 38K | 30ms |
+| Medium model | ~24 MB | 500K | 40ms |
+| Large model | ~44 MB | 920K | 80ms |
+| Complex character | ~48 MB | 1.0M | 70ms |
+
+Throughput scales linearly with triangle count at approximately 14 million triangles/second for the rasterization pass.
+
+### High Resolution & Animation
+
+| Configuration | Time |
+|---------------|------|
+| 1M triangles @ 1024×1024, 4x AA | 220ms |
+| 1M triangles, animated GIF (16 frames) | 1.1s |
+| Batch: 9 models (1.4M total triangles) | 450ms |
+| Recursive batch: 26 models | 1.8s |
+
+### Memory Usage
+
+Memory is dominated by the framebuffer, not input geometry. STL files stream via mmap; OBJ and 3MF are buffered.
+
+| Configuration | Max RSS |
+|---------------|---------|
+| 48MB STL @ 512×512, 2x AA | 59 MB |
+| 48MB STL @ 1024×1024, 4x AA | 182 MB |
+| 48MB STL, animated GIF (16 frames) | 95 MB |
+
+For typical models at default settings (512×512, 2x AA), expect 20-60 MB RSS regardless of input file size.
 
 ---
 

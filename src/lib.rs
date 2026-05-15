@@ -50,7 +50,7 @@ pub use mesh::BoundingBox;
 pub use obj::ObjReader;
 pub use output::{OutputError, RenderMetadata};
 pub use stl::{StlError, StlReader, Triangle};
-pub use tmf3::Tmf3Reader;
+pub use tmf3::{Tmf3Reader, Unit3mf};
 
 use thiserror::Error;
 

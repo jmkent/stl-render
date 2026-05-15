@@ -61,9 +61,25 @@ stl-render model.stl -o preview.gif --animate --material-color tan
 | STL Binary | .stl | Fastest, most common |
 | STL ASCII | .stl | Auto-detected from content |
 | OBJ | .obj | Text-based, widely supported |
-| 3MF | .3mf | ZIP with XML mesh data, multi-object support |
+| 3MF | .3mf | Full scene graph support |
 
-Format is auto-detected from file content, not extension. Multi-object 3MF files render all objects merged into a single view.
+Format is auto-detected from file content, not extension.
+
+### 3MF Support
+
+3MF files are fully supported including:
+- **Build items** with transform matrices (positioning objects in build volume)
+- **Component references** with nested transforms (assemblies)
+- **Unit metadata** (millimeter, centimeter, inch, foot, micron)
+- **Multi-object files** (all objects merged with correct positioning)
+
+Materials and colors are not yet supported (renders use `--material-color`).
+
+### Format Limitations
+
+**OBJ:** Negative (relative) indices, line continuations, and mid-line comments are not supported. Materials and textures are ignored.
+
+Files from common tools (Blender, FreeCAD, PrusaSlicer, Cura) work correctly.
 
 ## View Presets
 
@@ -196,7 +212,7 @@ Empty mesh files (zero triangles) are rejected with exit code 2 because there is
 
 ### Prerequisites
 
-- Rust 1.88+
+- [Rust](https://www.rust-lang.org/tools/install) 1.88+ (install via `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - No GPU required
 
 ### Build & Test

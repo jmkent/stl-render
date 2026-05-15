@@ -1769,6 +1769,69 @@ fn test_missing_model_3mf_error() {
     );
 }
 
+#[test]
+fn test_3mf_assembly_with_transforms() {
+    // Tests that build items with transforms position objects correctly
+    use stl_render::{RenderConfigBuilder, render_to_image};
+
+    let config = RenderConfigBuilder::new("fixtures/assembly.3mf", "-")
+        .size(128)
+        .build();
+
+    let (_image, meta) = render_to_image(&config).unwrap();
+
+    // Assembly has 2 cubes (12 triangles each) = 24 triangles
+    assert_eq!(meta.triangle_count, 24);
+}
+
+#[test]
+fn test_3mf_components_with_transforms() {
+    // Tests that component references are resolved with transforms
+    use stl_render::{RenderConfigBuilder, render_to_image};
+
+    let config = RenderConfigBuilder::new("fixtures/components.3mf", "-")
+        .size(128)
+        .build();
+
+    let (_image, meta) = render_to_image(&config).unwrap();
+
+    // Component object references cube twice = 24 triangles
+    assert_eq!(meta.triangle_count, 24);
+}
+
+#[test]
+fn test_3mf_unit_accessible() {
+    // Tests that unit metadata is parsed from 3MF
+    use stl_render::{Tmf3Reader, Unit3mf};
+    use std::path::Path;
+
+    // components.3mf has unit="inch"
+    let reader = Tmf3Reader::open(Path::new("fixtures/components.3mf")).unwrap();
+    assert_eq!(reader.unit(), Unit3mf::Inch);
+    assert_eq!(reader.unit().to_mm_scale(), 25.4);
+
+    // assembly.3mf has unit="millimeter"
+    let reader = Tmf3Reader::open(Path::new("fixtures/assembly.3mf")).unwrap();
+    assert_eq!(reader.unit(), Unit3mf::Millimeter);
+}
+
+#[test]
+fn test_3mf_transforms_affect_bounding_box() {
+    // Verify transforms actually move geometry
+    use stl_render::{RenderConfigBuilder, render_to_image};
+
+    let config = RenderConfigBuilder::new("fixtures/assembly.3mf", "-")
+        .size(128)
+        .build();
+
+    let (_image, meta) = render_to_image(&config).unwrap();
+
+    // Assembly: cube at origin (0-1) + cube translated by (5,0,0) at (5-6)
+    // So bounding box should be roughly 0-6 in X
+    assert!(meta.bounding_box.max[0] > 5.0, "X max should be > 5 due to translation");
+    assert!(meta.bounding_box.min[0] >= 0.0, "X min should be >= 0");
+}
+
 // =============================================================================
 // OBJ Format Tests
 // =============================================================================

@@ -18,6 +18,7 @@ stl-render model.3mf -o preview.gif --animate
 | STL parsing (binary/ASCII, streaming) | ✓ |
 | OBJ parsing (buffered) | ✓ |
 | 3MF parsing (ZIP/XML, buffered) | ✓ |
+| 3MF scene graph (transforms, builds, components, units) | ✓ |
 | Software rasterizer | ✓ |
 | View presets (7 standard + 5 print) | ✓ |
 | Print grid composite | ✓ |
@@ -213,7 +214,8 @@ fn apply_watermark(image: &mut RgbaImage, watermark: &RgbaImage, config: &Waterm
 
 From Known Issues review - functional code complete, documentation pending:
 
-- [ ] **KI4/KI5:** Add format limitations section to README.md documenting 3MF and OBJ subset support
+- [ ] **KI4:** Document 3MF support scope (scene graph, transforms, units; materials deferred)
+- [ ] **KI5:** Add OBJ format limitations section to README.md
 - [ ] **KI8:** Add memory note to README for high-frame-count GIF animations
 
 ---
@@ -225,7 +227,7 @@ From Known Issues review - functional code complete, documentation pending:
 | KI1 | Public API Surface | ✓ Reviewed, acceptable for v1 |
 | KI2 | Configuration Validation | ✓ Implemented (`RenderConfig::validate()`) |
 | KI3 | Batch Error Aggregation | ✓ Implemented (severity-based exit codes) |
-| KI4 | 3MF Compatibility | ✓ Functional, needs README docs |
+| KI4 | 3MF Compatibility | ✓ Full scene graph support (M14) |
 | KI5 | OBJ Compatibility | ✓ Functional, needs README docs |
 | KI6 | User-Facing Terminology | ✓ Implemented (`RenderError::Mesh`) |
 | KI7 | Release Hygiene | Mostly done, needs publish dry-run |

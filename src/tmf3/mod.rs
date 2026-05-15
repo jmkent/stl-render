@@ -3,8 +3,16 @@
 //! 3MF (3D Manufacturing Format) is a ZIP-based format containing XML mesh data.
 //! Unlike STL, 3MF must be fully decompressed before parsing, so triangles are
 //! buffered in memory rather than streamed.
+//!
+//! This parser supports:
+//! - Multiple objects with mesh geometry
+//! - Build items with transforms
+//! - Component references with nested transforms
+//! - Unit metadata (mm, cm, inch, foot, micron)
 
 mod parser;
+
+pub use parser::Unit3mf;
 
 use std::io::{Read, Seek};
 use std::path::Path;
@@ -14,9 +22,10 @@ use crate::stl::{StlError, Triangle};
 /// Reader for 3MF files.
 ///
 /// 3MF files are ZIP archives containing XML mesh data. This reader extracts
-/// and parses the mesh data, buffering all triangles in memory.
+/// and parses the mesh data, resolving build items and component transforms.
 pub struct Tmf3Reader {
     triangles: Vec<Triangle>,
+    unit: Unit3mf,
 }
 
 impl Tmf3Reader {
@@ -28,13 +37,21 @@ impl Tmf3Reader {
 
     /// Read a 3MF file from any reader that supports Read + Seek.
     pub fn from_reader<R: Read + Seek>(reader: R) -> Result<Self, StlError> {
-        let triangles = parser::parse_3mf(reader)?;
-        Ok(Self { triangles })
+        let result = parser::parse_3mf(reader)?;
+        Ok(Self {
+            triangles: result.triangles,
+            unit: result.unit,
+        })
     }
 
     /// Get the number of triangles in the mesh.
     pub fn triangle_count(&self) -> u64 {
         self.triangles.len() as u64
+    }
+
+    /// Get the unit of measurement in the 3MF file.
+    pub fn unit(&self) -> Unit3mf {
+        self.unit
     }
 
     /// Get an iterator over the triangles.
