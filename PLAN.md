@@ -30,7 +30,7 @@ stl-render model.3mf -o preview.gif --animate
 | Library API | ✓ |
 | Configuration validation | ✓ |
 | Release packaging (M16) | Planned |
-| Dimension overlay (M17) | Planned |
+| Dimension overlay (M17) | ✓ |
 | Watermark overlay (M18) | Planned |
 | 3MF materials/colors (M19) | ✓ |
 
@@ -71,76 +71,16 @@ stl-render model.3mf -o preview.gif --animate
 
 ---
 
-### M17: Dimension Overlay
+### M17: Dimension Overlay ✓
 
-**Goal:** Project physical dimensions (X/Y/Z extents in mm) onto rendered output to show real-world print size.
+**Status:** Complete. See ARCHITECTURE.md for implementation details.
 
-#### Use Case
-
-When browsing a model collection, knowing actual print dimensions at a glance helps with print planning. Currently requires opening models in a slicer or CAD tool.
-
-#### CLI Interface
-
-```bash
-stl-render model.stl -o preview.png --dimensions
-stl-render model.stl -o preview.png --dimensions --units in
-stl-render model.stl -o preview.png --dimensions --dimension-color "#ffffff"
-```
-
-**Flags:**
-- `--dimensions` - Enable dimension overlay
-- `--units <mm|in>` - Display units (default: mm)
-- `--dimension-color <hex>` - Line/text color (default: auto-contrast)
-
-#### Visual Design
-
-```
-┌────────────────────────────┐
-│                            │
-│     ┌─────────────┐        │
-│     │             │ ↕ 45mm │
-│     │   [model]   │        │
-│     │             │        │
-│     └─────────────┘        │
-│       ←── 62mm ──→         │
-│                            │
-│              depth: 38mm   │
-└────────────────────────────┘
-```
-
-- X/Y dimensions as lines with end caps along model edges
-- Z (depth) as text label (can't draw orthogonal line in 2D projection)
-- Auto-contrast: white text with dark outline, or vice versa
-- Position lines outside model bounds with small margin
-
-#### Implementation
-
-**Text rendering options:**
-1. **Embedded bitmap font** - No deps, ~2KB for digits/units, pixel-perfect at small sizes
-2. **`ab_glyph` crate** - TrueType rendering, more flexible, adds ~50KB
-
-Recommend option 1 for v1 (lightweight goal), with option to upgrade later.
-
-**Drawing:**
-- Use existing `image` crate for pixel manipulation
-- Draw lines with configurable thickness (1-2px)
-- Render dimension text at line endpoints
-
-**Files to modify:**
-- `src/cli.rs` - Add flags
-- `src/output.rs` or new `src/overlay.rs` - Drawing logic
-- `src/lib.rs` - Apply overlay after render, before encode
-
-#### Test Plan
-
-- [ ] Dimension lines visible on rendered output
-- [ ] Dimensions match metadata bounding box values
-- [ ] Units display correctly (mm/in conversion)
-- [ ] Works with transparent and solid backgrounds
-- [ ] Works with animated GIF (overlay on each frame)
-- [ ] Auto-contrast readable against light and dark models
-
-**Acceptance:** `--dimensions` shows accurate X/Y/Z measurements overlaid on render.
+**Features:**
+- `--dimensions` flag enables a depth-aware 3D bounding box with X/Y/Z labels
+- `--units mm|in` for display units
+- `--dimension-color <hex>` for custom colors (default: auto-contrast)
+- Embedded 5x7 bitmap font for text rendering (no external dependencies)
+- Works with static PNG, animated GIF, and print-grid outputs
 
 ---
 

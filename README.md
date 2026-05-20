@@ -197,6 +197,9 @@ Options:
       --animate                 Enable animated GIF output (rotating view)
       --frames <N>              Number of animation frames [default: 16]
       --frame-delay <MS>        Milliseconds between frames [default: 100]
+      --dimensions              Show dimension overlay (X/Y/Z extents)
+      --units <mm|in>           Dimension units [default: mm]
+      --dimension-color <HEX>   Dimension line/text color (default: auto-contrast)
       --metadata <PATH>         Write render metadata JSON
       --strict                  Abort on first error (default: continue processing)
       --quiet                   Suppress progress output

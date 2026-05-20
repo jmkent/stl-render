@@ -9,6 +9,23 @@ pub struct Camera {
 }
 
 impl Camera {
+    /// Project a 3D world-space point to 2D screen coordinates.
+    /// Returns (x, y) in pixel coordinates, or None if the point is behind the camera.
+    pub fn project_to_screen(&self, point: Vec3, width: u32, height: u32) -> Option<(f32, f32)> {
+        // Transform to view space
+        let view_pos = self.view_matrix.transform_point3(point);
+
+        // Transform to clip space
+        let clip_pos = self.proj_matrix.transform_point3(view_pos);
+
+        // Map from clip space [-1, 1] to screen space [0, width/height]
+        // Note: Y is flipped (clip space Y+ is up, screen Y+ is down)
+        let screen_x = (clip_pos.x + 1.0) * 0.5 * width as f32;
+        let screen_y = (1.0 - clip_pos.y) * 0.5 * height as f32;
+
+        Some((screen_x, screen_y))
+    }
+
     pub fn from_preset(
         preset: ViewPreset,
         bounds: &BoundingBox,

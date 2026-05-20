@@ -462,6 +462,50 @@ CLI accepts named presets or hex colors:
 
 ---
 
+## Dimension Overlay
+
+The `overlay` module (`src/overlay.rs`) provides dimension annotations overlaid on rendered output.
+
+**CLI flags:**
+```bash
+--dimensions              # Enable overlay
+--units mm|in             # Display units (default: mm)
+--dimension-color "#fff"  # Custom color (default: auto-contrast)
+```
+
+**Implementation:**
+- Projects the 3D bounding box corners to screen space using the camera matrices
+- Draws the full bounding box into the depth buffer before mesh rasterization
+- Rasterizes the mesh over farther box edges so model surfaces hide rear lines
+- Draws the full bounding box again after mesh rasterization with depth testing so near lines appear over the model
+- Labels X, Y, Z dimensions on the longest visible edge for each axis
+- Embedded 5x7 bitmap font for text (~2KB glyph data, no external dependencies)
+- Auto-contrast: analyzes average image brightness, chooses dark lines/text on light backgrounds and vice versa
+
+**Visual approach:**
+- Draws a wireframe bounding box that appears to wrap around the model like a transparent box
+- Rear edge fragments are hidden by the model where the model is closer to the camera
+- Near edge fragments are reinforced over the model where the box is closer to the camera
+- X, Y, Z dimension labels placed at midpoints of corresponding edges with perpendicular offset
+- Dashed lines for clear distinction from model edges
+
+**Animation consistency:**
+- For animated GIFs, label edge positions are computed on frame 0 and fixed for all subsequent frames
+- Prevents labels from jumping between edges as the model rotates
+- Uses `apply_dimensions_with_labels()` with precomputed `LabelEdges`
+
+**Data flow:**
+1. `render_to_image()` renders full bounding box to the framebuffer
+2. Mesh triangles are rasterized into the same depth buffer, hiding farther box edge fragments
+3. Full bounding box is redrawn with depth testing, reinforcing nearer box edge fragments
+4. Camera is reconstructed at output resolution (not AA-scaled)
+5. `overlay::apply_dimensions()` projects bounding box corners and draws labels
+6. Result encoded to PNG/GIF
+
+Works with all output modes: single image, animated GIF (fixed label positions), and print-grid (uses print-front view).
+
+---
+
 ## Configuration Validation
 
 `RenderConfig::validate()` checks:

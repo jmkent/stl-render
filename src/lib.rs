@@ -37,6 +37,7 @@ pub mod cli;
 pub mod mesh;
 pub mod obj;
 pub mod output;
+pub mod overlay;
 pub mod render;
 pub mod stl;
 pub mod tmf3;
@@ -49,6 +50,7 @@ pub use cli::{
 pub use mesh::BoundingBox;
 pub use obj::ObjReader;
 pub use output::{OutputError, RenderMetadata};
+pub use overlay::{DimensionConfig, DimensionUnits};
 pub use stl::{StlError, StlReader, Triangle};
 pub use tmf3::{Tmf3Reader, Unit3mf};
 
@@ -238,7 +240,30 @@ pub fn render_to_image(
     }
 
     // Render to image
-    let image = render_single_view(config, &reader, &bounds)?;
+    let mut image = render_single_view(config, &reader, &bounds)?;
+
+    // Apply dimension overlay if enabled
+    if config.dimension_config.enabled {
+        // Create camera at output resolution (not AA scaled) for overlay projection
+        let overlay_cam = match config.view {
+            cli::ViewConfig::Preset(preset) => camera::Camera::from_preset(
+                preset,
+                &bounds,
+                config.width,
+                config.height,
+                config.padding,
+            ),
+            cli::ViewConfig::Custom { azimuth, elevation } => camera::Camera::from_angles(
+                azimuth,
+                elevation,
+                &bounds,
+                config.width,
+                config.height,
+                config.padding,
+            ),
+        };
+        overlay::apply_dimensions(&mut image, &bounds, &overlay_cam, &config.dimension_config);
+    }
 
     if config.verbose {
         eprintln!("Rendered {}x{} image", config.width, config.height);
@@ -322,11 +347,52 @@ pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderEr
     let frame_count = config.frames;
     let mut frames = Vec::with_capacity(frame_count as usize);
 
+    // Compute fixed label edges from frame 0 for animation consistency
+    let fixed_label_edges = if config.dimension_config.enabled {
+        let first_cam = camera::Camera::from_print_view_for_animation(
+            0.0,
+            &bounds,
+            sphere_radius,
+            config.width,
+            config.height,
+            config.padding,
+        );
+        Some(overlay::compute_label_edges(
+            &bounds,
+            &first_cam,
+            config.width,
+            config.height,
+        ))
+    } else {
+        None
+    };
+
     // Render each frame at a different azimuth
     for i in 0..frame_count {
         let azimuth = (i as f32 / frame_count as f32) * 360.0;
 
-        let frame_image = render_animation_frame(config, &reader, &bounds, sphere_radius, azimuth)?;
+        let mut frame_image =
+            render_animation_frame(config, &reader, &bounds, sphere_radius, azimuth)?;
+
+        // Apply dimension overlay to each frame with fixed label positions
+        if config.dimension_config.enabled {
+            let overlay_cam = camera::Camera::from_print_view_for_animation(
+                azimuth,
+                &bounds,
+                sphere_radius,
+                config.width,
+                config.height,
+                config.padding,
+            );
+            overlay::apply_dimensions_with_labels(
+                &mut frame_image,
+                &bounds,
+                &overlay_cam,
+                &config.dimension_config,
+                fixed_label_edges,
+            );
+        }
+
         frames.push(frame_image);
 
         if config.verbose {
@@ -410,10 +476,36 @@ fn render_single_view(
         config.background_color,
     );
 
-    // Render triangles
+    // Draw the full bounding box before triangles so model surfaces occlude
+    // the edges that are farther from the camera.
+    let dimension_box_color = if config.dimension_config.enabled {
+        Some(overlay::get_dimension_color(&config.dimension_config, &fb))
+    } else {
+        None
+    };
+
+    if let Some(box_color) = dimension_box_color {
+        let scale = aa_scale.max(1);
+        let dash_len = 6 * scale as i32;
+        let gap_len = 4 * scale as i32;
+        let thickness = scale as i32;
+        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
+    }
+
+    // Render triangles (will occlude back bounding box edges via depth test)
     for result in reader.triangles()? {
         let tri = result?;
         fb.rasterize_triangle(&tri, &cam, config);
+    }
+
+    // Draw the full bounding box again after triangles using the final depth
+    // buffer so only edge fragments closer than the model are reinforced.
+    if let Some(box_color) = dimension_box_color {
+        let scale = aa_scale.max(1);
+        let dash_len = 6 * scale as i32;
+        let gap_len = 4 * scale as i32;
+        let thickness = scale as i32;
+        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
     }
 
     // Downsample if AA enabled
@@ -454,10 +546,36 @@ fn render_animation_frame(
         config.background_color,
     );
 
-    // Render triangles
+    // Draw the full bounding box before triangles so model surfaces occlude
+    // the edges that are farther from the camera.
+    let dimension_box_color = if config.dimension_config.enabled {
+        Some(overlay::get_dimension_color(&config.dimension_config, &fb))
+    } else {
+        None
+    };
+
+    if let Some(box_color) = dimension_box_color {
+        let scale = aa_scale.max(1);
+        let dash_len = 6 * scale as i32;
+        let gap_len = 4 * scale as i32;
+        let thickness = scale as i32;
+        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
+    }
+
+    // Render triangles (will occlude back bounding box edges via depth test)
     for result in reader.triangles()? {
         let tri = result?;
         fb.rasterize_triangle(&tri, &cam, config);
+    }
+
+    // Draw the full bounding box again after triangles using the final depth
+    // buffer so only edge fragments closer than the model are reinforced.
+    if let Some(box_color) = dimension_box_color {
+        let scale = aa_scale.max(1);
+        let dash_len = 6 * scale as i32;
+        let gap_len = 4 * scale as i32;
+        let thickness = scale as i32;
+        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
     }
 
     // Downsample if AA enabled
@@ -538,9 +656,26 @@ fn render_print_grid_to_image(
             animate: false,
             frames: 0,
             frame_delay: 0,
+            dimension_config: config.dimension_config.clone(),
         };
 
-        let quad_image = render_single_view(&quad_config, &reader, &bounds)?;
+        let mut quad_image = render_single_view(&quad_config, &reader, &bounds)?;
+
+        if config.dimension_config.enabled {
+            let overlay_cam = camera::Camera::from_preset(
+                preset,
+                &bounds,
+                quad_width,
+                quad_height,
+                config.padding,
+            );
+            overlay::apply_dimensions(
+                &mut quad_image,
+                &bounds,
+                &overlay_cam,
+                &config.dimension_config,
+            );
+        }
 
         // Copy quadrant into composite
         composite

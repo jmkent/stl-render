@@ -32,6 +32,11 @@ impl Framebuffer {
         }
     }
 
+    /// Get the color at a specific buffer index.
+    pub fn get_color(&self, idx: usize) -> [u8; 4] {
+        self.color.get(idx).copied().unwrap_or([0, 0, 0, 0])
+    }
+
     pub fn rasterize_triangle(&mut self, tri: &Triangle, camera: &Camera, config: &RenderConfig) {
         let mvp = camera.matrix();
 
@@ -156,6 +161,131 @@ impl Framebuffer {
                         (a_sum / count) as u8,
                     ])
                 })
+            }
+        }
+    }
+
+    /// Draw a depth-tested dashed line between two screen-space points.
+    /// Points are (x, y, depth) where depth is the NDC z value.
+    pub fn draw_dashed_line(
+        &mut self,
+        x0: f32,
+        y0: f32,
+        z0: f32,
+        x1: f32,
+        y1: f32,
+        z1: f32,
+        color: [u8; 4],
+        dash_len: i32,
+        gap_len: i32,
+        thickness: i32,
+    ) {
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let dz = z1 - z0;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 1.0 {
+            return;
+        }
+
+        let steps = len as i32;
+        let cycle = dash_len + gap_len;
+
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let x = x0 + dx * t;
+            let y = y0 + dy * t;
+            let z = z0 + dz * t;
+
+            let px = x as i32;
+            let py = y as i32;
+
+            // Check bounds
+            if px < 0 || py < 0 || px >= self.width as i32 || py >= self.height as i32 {
+                continue;
+            }
+
+            // Check if in dash (not gap)
+            if (i % cycle) >= dash_len {
+                continue;
+            }
+
+            let radius = (thickness.max(1) - 1) / 2;
+            for oy in -radius..=radius {
+                for ox in -radius..=radius {
+                    let tx = px + ox;
+                    let ty = py + oy;
+                    if tx < 0 || ty < 0 || tx >= self.width as i32 || ty >= self.height as i32 {
+                        continue;
+                    }
+
+                    let idx = (ty as u32 * self.width + tx as u32) as usize;
+
+                    // Depth test: only draw if this pixel is closer than existing
+                    if z < self.depth[idx] {
+                        self.depth[idx] = z;
+                        self.color[idx] = color;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Draw the bounding box edges with depth testing.
+    pub fn draw_bounding_box(
+        &mut self,
+        bounds: &crate::mesh::BoundingBox,
+        camera: &Camera,
+        color: [u8; 4],
+        dash_len: i32,
+        gap_len: i32,
+        thickness: i32,
+    ) {
+        use glam::Vec3;
+
+        let min = Vec3::from_array(bounds.min);
+        let max = Vec3::from_array(bounds.max);
+
+        // 8 corners of the bounding box
+        let corners = [
+            Vec3::new(min.x, min.y, min.z), // 0: ---
+            Vec3::new(max.x, min.y, min.z), // 1: +--
+            Vec3::new(min.x, max.y, min.z), // 2: -+-
+            Vec3::new(max.x, max.y, min.z), // 3: ++-
+            Vec3::new(min.x, min.y, max.z), // 4: --+
+            Vec3::new(max.x, min.y, max.z), // 5: +-+
+            Vec3::new(min.x, max.y, max.z), // 6: -++
+            Vec3::new(max.x, max.y, max.z), // 7: +++
+        ];
+
+        // Project corners to screen space
+        let mvp = camera.matrix();
+        let projected: Vec<Option<(Vec3, f32)>> = corners
+            .iter()
+            .map(|&c| project_vertex(c, &mvp, self.width, self.height))
+            .collect();
+
+        // 12 edges of the box
+        let edges = [
+            (0, 1),
+            (1, 3),
+            (3, 2),
+            (2, 0), // bottom face
+            (4, 5),
+            (5, 7),
+            (7, 6),
+            (6, 4), // top face
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7), // vertical edges
+        ];
+
+        for &(i, j) in &edges {
+            if let (Some((p0, z0)), Some((p1, z1))) = (projected[i], projected[j]) {
+                self.draw_dashed_line(
+                    p0.x, p0.y, z0, p1.x, p1.y, z1, color, dash_len, gap_len, thickness,
+                );
             }
         }
     }
@@ -306,6 +436,7 @@ mod tests {
             animate: false,
             frames: 16,
             frame_delay: 100,
+            dimension_config: crate::overlay::DimensionConfig::default(),
         }
     }
 

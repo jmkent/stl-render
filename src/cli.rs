@@ -41,6 +41,9 @@ pub enum CliError {
     #[error("invalid color map '{0}' (expected format: 0:#ff0000,1:#00ff00)")]
     InvalidColorMap(String),
 
+    #[error("invalid dimension units '{0}' (expected mm or in)")]
+    InvalidUnits(String),
+
     #[error("invalid lighting preset '{0}' (expected flat, studio, or technical)")]
     InvalidLighting(String),
 
@@ -160,6 +163,18 @@ pub struct Args {
     /// Frame delay in milliseconds for animated GIF (default: 100)
     #[arg(long, default_value = "100")]
     pub frame_delay: u16,
+
+    /// Show dimension overlay (X/Y/Z extents)
+    #[arg(long)]
+    pub dimensions: bool,
+
+    /// Display units for dimensions: mm, in (default: mm)
+    #[arg(long, default_value = "mm")]
+    pub units: String,
+
+    /// Dimension line/text color (hex, e.g., #ffffff; default: auto-contrast)
+    #[arg(long)]
+    pub dimension_color: Option<String>,
 }
 
 /// Camera view presets for common viewing angles.
@@ -298,6 +313,8 @@ pub struct RenderConfig {
     pub frames: u32,
     /// Frame delay in milliseconds for animated GIF
     pub frame_delay: u16,
+    /// Dimension overlay configuration
+    pub dimension_config: crate::overlay::DimensionConfig,
 }
 
 impl RenderConfig {
@@ -320,8 +337,7 @@ impl RenderConfig {
             AntiAliasing::X2 => 2,
             AntiAliasing::X4 => 4,
         };
-        if self.width.checked_mul(aa_scale).is_none()
-            || self.height.checked_mul(aa_scale).is_none()
+        if self.width.checked_mul(aa_scale).is_none() || self.height.checked_mul(aa_scale).is_none()
         {
             return Err(format!(
                 "dimensions {}x{} with {}x AA would overflow",
@@ -380,6 +396,7 @@ pub struct RenderConfigBuilder {
     animate: bool,
     frames: u32,
     frame_delay: u16,
+    dimension_config: crate::overlay::DimensionConfig,
 }
 
 impl RenderConfigBuilder {
@@ -413,6 +430,7 @@ impl RenderConfigBuilder {
             animate: false,
             frames: 16,
             frame_delay: 100,
+            dimension_config: crate::overlay::DimensionConfig::default(),
         }
     }
 
@@ -526,6 +544,19 @@ impl RenderConfigBuilder {
         self
     }
 
+    /// Enable dimension overlay with the specified units.
+    pub fn dimensions(mut self, units: crate::overlay::DimensionUnits) -> Self {
+        self.dimension_config.enabled = true;
+        self.dimension_config.units = units;
+        self
+    }
+
+    /// Set dimension overlay color (otherwise auto-contrast).
+    pub fn dimension_color(mut self, color: [u8; 3]) -> Self {
+        self.dimension_config.color = Some(color);
+        self
+    }
+
     /// Build the [`RenderConfig`].
     pub fn build(self) -> RenderConfig {
         RenderConfig {
@@ -547,6 +578,7 @@ impl RenderConfigBuilder {
             animate: self.animate,
             frames: self.frames,
             frame_delay: self.frame_delay,
+            dimension_config: self.dimension_config,
         }
     }
 }
@@ -583,6 +615,7 @@ pub struct BatchConfig {
     pub frames: u32,
     pub frame_delay: u16,
     pub list_colors: bool,
+    pub dimension_config: crate::overlay::DimensionConfig,
 }
 
 impl BatchConfig {
@@ -621,6 +654,7 @@ impl BatchConfig {
                     animate: self.animate,
                     frames: self.frames,
                     frame_delay: self.frame_delay,
+                    dimension_config: self.dimension_config.clone(),
                 }
             })
         })
@@ -817,6 +851,15 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         frames: args.frames,
         frame_delay: args.frame_delay,
         list_colors: args.list_colors,
+        dimension_config: crate::overlay::DimensionConfig {
+            enabled: args.dimensions,
+            units: parse_units(&args.units)?,
+            color: if let Some(ref c) = args.dimension_color {
+                Some(parse_hex_color(c)?)
+            } else {
+                None
+            },
+        },
     })
 }
 
@@ -975,6 +1018,14 @@ fn parse_lighting(s: &str) -> Result<LightingPreset, CliError> {
         _ => return Err(CliError::InvalidLighting(s.to_string())),
     };
     Ok(lighting)
+}
+
+fn parse_units(s: &str) -> Result<crate::overlay::DimensionUnits, CliError> {
+    match s.to_lowercase().as_str() {
+        "mm" | "millimeters" => Ok(crate::overlay::DimensionUnits::Millimeters),
+        "in" | "inches" => Ok(crate::overlay::DimensionUnits::Inches),
+        _ => Err(CliError::InvalidUnits(s.to_string())),
+    }
 }
 
 fn parse_hex_color(s: &str) -> Result<[u8; 3], CliError> {
@@ -1452,6 +1503,7 @@ mod tests {
             frames: 16,
             frame_delay: 100,
             list_colors: false,
+            dimension_config: crate::overlay::DimensionConfig::default(),
         };
 
         let outputs: Vec<_> = config.iter_jobs().map(|job| job.output).collect();

@@ -242,6 +242,38 @@ stl-render fixtures/sphere.stl -o sphere-silver.png --view iso --material-color 
 stl-render fixtures/cylinder.stl -o cylinder-orange.png --view print --material-color orange
 ```
 
+## Dimension Overlay
+
+Show physical dimensions (X/Y/Z extents) overlaid on renders. Useful for understanding print size at a glance.
+The dashed bounding box is depth-aware: rear edge fragments are hidden by the model, while nearer edge fragments are drawn over it, giving the appearance of a model inside a transparent box.
+
+| Millimeters (default) | Inches |
+|-----------------------|--------|
+| ![Depth-aware dimension box](examples/dimensions_benchy.png) | ![Depth-aware dimension box in inches](examples/dimensions_inches.png) |
+
+```bash
+# Show dimensions in millimeters (default)
+stl-render model.stl -o preview.png --dimensions
+
+# Show dimensions in inches
+stl-render model.stl -o preview.png --dimensions --units in
+
+# Custom dimension line color
+stl-render model.stl -o preview.png --dimensions --dimension-color "#ff0000"
+```
+
+Dimensions work with animated GIFs too:
+
+| Rotating with Dimensions                                 |
+|----------------------------------------------------------|
+| ![Animated Dimensions](examples/dimensions_animated.gif) |
+
+```bash
+stl-render model.stl -o preview.gif --animate --frames 24 --frame-delay 150 --dimensions
+```
+
+The overlay automatically chooses high-contrast colors based on the rendered image.
+
 ## Lighting Presets
 
 | Flat | Studio (default) | Technical |
