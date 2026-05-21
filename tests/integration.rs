@@ -1549,7 +1549,7 @@ fn test_render_config_builder_solid_background() {
 
 #[test]
 fn test_render_to_image_returns_image_and_metadata() {
-    use stl_render::{RenderConfigBuilder, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder};
 
     let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .size(128)
@@ -1565,7 +1565,7 @@ fn test_render_to_image_returns_image_and_metadata() {
 
 #[test]
 fn test_render_to_image_with_print_grid() {
-    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
 
     let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .view(ViewPreset::PrintGrid)
@@ -1672,7 +1672,7 @@ fn test_3mf_with_all_view_presets() {
 
 #[test]
 fn test_3mf_stl_produce_same_output() {
-    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
 
     let stl_config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .view(ViewPreset::Iso)
@@ -1772,7 +1772,7 @@ fn test_missing_model_3mf_error() {
 #[test]
 fn test_3mf_assembly_with_transforms() {
     // Tests that build items with transforms position objects correctly
-    use stl_render::{RenderConfigBuilder, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder};
 
     let config = RenderConfigBuilder::new("fixtures/assembly.3mf", "-")
         .size(128)
@@ -1787,7 +1787,7 @@ fn test_3mf_assembly_with_transforms() {
 #[test]
 fn test_3mf_components_with_transforms() {
     // Tests that component references are resolved with transforms
-    use stl_render::{RenderConfigBuilder, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder};
 
     let config = RenderConfigBuilder::new("fixtures/components.3mf", "-")
         .size(128)
@@ -1802,8 +1802,8 @@ fn test_3mf_components_with_transforms() {
 #[test]
 fn test_3mf_unit_accessible() {
     // Tests that unit metadata is parsed from 3MF
-    use stl_render::{Tmf3Reader, Unit3mf};
     use std::path::Path;
+    use stl_render::{Tmf3Reader, Unit3mf};
 
     // components.3mf has unit="inch"
     let reader = Tmf3Reader::open(Path::new("fixtures/components.3mf")).unwrap();
@@ -1818,7 +1818,7 @@ fn test_3mf_unit_accessible() {
 #[test]
 fn test_3mf_transforms_affect_bounding_box() {
     // Verify transforms actually move geometry
-    use stl_render::{RenderConfigBuilder, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder};
 
     let config = RenderConfigBuilder::new("fixtures/assembly.3mf", "-")
         .size(128)
@@ -1828,7 +1828,10 @@ fn test_3mf_transforms_affect_bounding_box() {
 
     // Assembly: cube at origin (0-1) + cube translated by (5,0,0) at (5-6)
     // So bounding box should be roughly 0-6 in X
-    assert!(meta.bounding_box.max[0] > 5.0, "X max should be > 5 due to translation");
+    assert!(
+        meta.bounding_box.max[0] > 5.0,
+        "X max should be > 5 due to translation"
+    );
     assert!(meta.bounding_box.min[0] >= 0.0, "X min should be >= 0");
 }
 
@@ -1891,7 +1894,7 @@ fn test_obj_with_all_view_presets() {
 
 #[test]
 fn test_obj_stl_produce_same_triangle_count() {
-    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder, ViewPreset};
 
     let stl_config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
         .view(ViewPreset::Iso)
@@ -2097,7 +2100,7 @@ fn test_animate_without_flag_produces_png() {
 
 #[test]
 fn test_animate_builder_api() {
-    use stl_render::{RenderConfigBuilder, render};
+    use stl_render::{render, RenderConfigBuilder};
 
     let dir = tempfile::tempdir().unwrap();
     let output = dir.path().join("cube.gif");
@@ -2209,7 +2212,7 @@ fn test_zero_frames_with_animate_returns_config_error() {
 fn test_negative_padding_returns_config_error() {
     // Note: CLI parsing with --padding -0.1 fails at clap level because -0 looks like a flag.
     // Testing validation via library API instead.
-    use stl_render::{RenderConfigBuilder, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder};
 
     let config = RenderConfigBuilder::new("fixtures/cube.stl", "/tmp/out.png")
         .padding(-0.1)
@@ -2229,7 +2232,7 @@ fn test_negative_padding_returns_config_error() {
 #[test]
 fn test_excessive_padding_returns_config_error() {
     // Test validation via library API
-    use stl_render::{RenderConfigBuilder, render_to_image};
+    use stl_render::{render_to_image, RenderConfigBuilder};
 
     let config = RenderConfigBuilder::new("fixtures/cube.stl", "/tmp/out.png")
         .padding(1.5)

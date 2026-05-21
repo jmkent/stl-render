@@ -1,8 +1,8 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::MeshReader;
 use crate::stl::{StlError, Triangle};
+use crate::MeshReader;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct BoundingBox {
@@ -78,9 +78,18 @@ impl BoundingBox {
 /// The 12 edges of a bounding box as (corner_a, corner_b) pairs.
 /// Indices refer to corners from `BoundingBox::corners()`.
 pub const BOX_EDGES: [(usize, usize); 12] = [
-    (0, 1), (1, 3), (3, 2), (2, 0),  // bottom face (Z=min)
-    (4, 5), (5, 7), (7, 6), (6, 4),  // top face (Z=max)
-    (0, 4), (1, 5), (2, 6), (3, 7),  // vertical edges
+    (0, 1),
+    (1, 3),
+    (3, 2),
+    (2, 0), // bottom face (Z=min)
+    (4, 5),
+    (5, 7),
+    (7, 6),
+    (6, 4), // top face (Z=max)
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7), // vertical edges
 ];
 
 /// Compute bounding box by streaming through all triangles.

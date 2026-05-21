@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::io::{Read, Seek};
 
 use glam::{Mat4, Vec3, Vec4};
-use quick_xml::Reader;
 use quick_xml::events::Event;
+use quick_xml::Reader;
 
 use crate::mesh::compute_normal;
 use crate::stl::{StlError, Triangle};
@@ -587,9 +587,9 @@ fn parse_transform(s: &str) -> Mat4 {
     //
     // glam Mat4 is column-major, so we construct columns:
     Mat4::from_cols(
-        Vec4::new(vals[0], vals[3], vals[6], 0.0),  // column 0
-        Vec4::new(vals[1], vals[4], vals[7], 0.0),  // column 1
-        Vec4::new(vals[2], vals[5], vals[8], 0.0),  // column 2
+        Vec4::new(vals[0], vals[3], vals[6], 0.0),   // column 0
+        Vec4::new(vals[1], vals[4], vals[7], 0.0),   // column 1
+        Vec4::new(vals[2], vals[5], vals[8], 0.0),   // column 2
         Vec4::new(vals[9], vals[10], vals[11], 1.0), // column 3 (translation)
     )
 }
@@ -616,9 +616,7 @@ fn parse_vertex(e: &quick_xml::events::BytesStart<'_>) -> Result<[f32; 3], StlEr
     }
 }
 
-fn parse_triangle_data(
-    e: &quick_xml::events::BytesStart<'_>,
-) -> Result<TriangleData, StlError> {
+fn parse_triangle_data(e: &quick_xml::events::BytesStart<'_>) -> Result<TriangleData, StlError> {
     let mut v1: Option<usize> = None;
     let mut v2: Option<usize> = None;
     let mut v3: Option<usize> = None;

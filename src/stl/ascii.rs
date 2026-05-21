@@ -93,7 +93,14 @@ fn parse_facet(text: &str) -> Result<(Triangle, usize), StlError> {
     let line = next_line(&mut lines, &mut consumed, "endfacet")?;
     expect_keyword(line, "endfacet")?;
 
-    Ok((Triangle { vertices, normal, vertex_colors: None }, consumed))
+    Ok((
+        Triangle {
+            vertices,
+            normal,
+            vertex_colors: None,
+        },
+        consumed,
+    ))
 }
 
 fn next_line<'a>(

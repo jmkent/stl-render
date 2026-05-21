@@ -73,8 +73,8 @@ pub fn write_gif(
     path: &Path,
     frame_delay_ms: u16,
 ) -> Result<(), OutputError> {
-    use image::Frame;
     use image::codecs::gif::{GifEncoder, Repeat};
+    use image::Frame;
     use std::fs::File;
 
     let file = File::create(path)?;
@@ -95,8 +95,8 @@ pub fn write_gif(
 }
 
 pub fn write_gif_to_stdout(frames: &[RgbaImage], frame_delay_ms: u16) -> Result<(), OutputError> {
-    use image::Frame;
     use image::codecs::gif::{GifEncoder, Repeat};
+    use image::Frame;
     use std::io::Write;
 
     let stdout = std::io::stdout();

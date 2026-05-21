@@ -1462,12 +1462,10 @@ mod tests {
             output_relative: PathBuf::from("cube.3mf"),
             preserve_extension_in_output: true,
         }));
-        assert!(
-            !config
-                .inputs
-                .iter()
-                .any(|input| input.path == nested.join("sphere.stl"))
-        );
+        assert!(!config
+            .inputs
+            .iter()
+            .any(|input| input.path == nested.join("sphere.stl")));
     }
 
     #[test]

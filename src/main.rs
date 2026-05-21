@@ -1,7 +1,7 @@
 use std::fs;
 use std::process::ExitCode;
 
-use stl_render::{MeshReader, OutputError, RenderError, cli};
+use stl_render::{cli, MeshReader, OutputError, RenderError};
 
 fn main() -> ExitCode {
     match run() {

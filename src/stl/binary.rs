@@ -69,7 +69,11 @@ impl Iterator for BinaryStlIter<'_> {
         self.offset += TRIANGLE_SIZE;
         self.remaining -= 1;
 
-        Some(Ok(Triangle { vertices, normal, vertex_colors: None }))
+        Some(Ok(Triangle {
+            vertices,
+            normal,
+            vertex_colors: None,
+        }))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
