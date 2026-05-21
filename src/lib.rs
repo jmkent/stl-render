@@ -476,20 +476,12 @@ fn render_single_view(
         config.background_color,
     );
 
-    // Draw the full bounding box before triangles so model surfaces occlude
-    // the edges that are farther from the camera.
-    let dimension_box_color = if config.dimension_config.enabled {
-        Some(overlay::get_dimension_color(&config.dimension_config, &fb))
-    } else {
-        None
-    };
+    // Compute line style for dimension box (if enabled)
+    let box_style = dimension_line_style(config, aa_scale);
 
-    if let Some(box_color) = dimension_box_color {
-        let scale = aa_scale.max(1);
-        let dash_len = 6 * scale as i32;
-        let gap_len = 4 * scale as i32;
-        let thickness = scale as i32;
-        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
+    // Draw bounding box before triangles (back edges will be occluded)
+    if let Some(ref style) = box_style {
+        fb.draw_bounding_box(bounds, &cam, style);
     }
 
     // Render triangles (will occlude back bounding box edges via depth test)
@@ -498,14 +490,9 @@ fn render_single_view(
         fb.rasterize_triangle(&tri, &cam, config);
     }
 
-    // Draw the full bounding box again after triangles using the final depth
-    // buffer so only edge fragments closer than the model are reinforced.
-    if let Some(box_color) = dimension_box_color {
-        let scale = aa_scale.max(1);
-        let dash_len = 6 * scale as i32;
-        let gap_len = 4 * scale as i32;
-        let thickness = scale as i32;
-        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
+    // Redraw bounding box after triangles (reinforces front edges)
+    if let Some(ref style) = box_style {
+        fb.draw_bounding_box(bounds, &cam, style);
     }
 
     // Downsample if AA enabled
@@ -546,20 +533,12 @@ fn render_animation_frame(
         config.background_color,
     );
 
-    // Draw the full bounding box before triangles so model surfaces occlude
-    // the edges that are farther from the camera.
-    let dimension_box_color = if config.dimension_config.enabled {
-        Some(overlay::get_dimension_color(&config.dimension_config, &fb))
-    } else {
-        None
-    };
+    // Compute line style for dimension box (if enabled)
+    let box_style = dimension_line_style(config, aa_scale);
 
-    if let Some(box_color) = dimension_box_color {
-        let scale = aa_scale.max(1);
-        let dash_len = 6 * scale as i32;
-        let gap_len = 4 * scale as i32;
-        let thickness = scale as i32;
-        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
+    // Draw bounding box before triangles (back edges will be occluded)
+    if let Some(ref style) = box_style {
+        fb.draw_bounding_box(bounds, &cam, style);
     }
 
     // Render triangles (will occlude back bounding box edges via depth test)
@@ -568,14 +547,9 @@ fn render_animation_frame(
         fb.rasterize_triangle(&tri, &cam, config);
     }
 
-    // Draw the full bounding box again after triangles using the final depth
-    // buffer so only edge fragments closer than the model are reinforced.
-    if let Some(box_color) = dimension_box_color {
-        let scale = aa_scale.max(1);
-        let dash_len = 6 * scale as i32;
-        let gap_len = 4 * scale as i32;
-        let thickness = scale as i32;
-        fb.draw_bounding_box(bounds, &cam, box_color, dash_len, gap_len, thickness);
+    // Redraw bounding box after triangles (reinforces front edges)
+    if let Some(ref style) = box_style {
+        fb.draw_bounding_box(bounds, &cam, style);
     }
 
     // Downsample if AA enabled
@@ -697,6 +671,32 @@ fn render_print_grid_to_image(
     };
 
     Ok((composite, metadata))
+}
+
+/// Compute the line style for dimension bounding box, if enabled.
+fn dimension_line_style(config: &RenderConfig, aa_scale: u32) -> Option<render::LineStyle> {
+    if !config.dimension_config.enabled {
+        return None;
+    }
+
+    let bg_color = match config.background {
+        cli::Background::Transparent => [0, 0, 0, 0],
+        cli::Background::Solid => [
+            config.background_color[0],
+            config.background_color[1],
+            config.background_color[2],
+            255,
+        ],
+    };
+    let box_color = overlay::get_dimension_color(&config.dimension_config, bg_color);
+
+    let scale = aa_scale.max(1) as i32;
+    Some(render::LineStyle {
+        color: box_color,
+        dash_len: 6 * scale,
+        gap_len: 4 * scale,
+        thickness: scale,
+    })
 }
 
 fn open_mesh_reader(config: &RenderConfig) -> Result<MeshReader, RenderError> {

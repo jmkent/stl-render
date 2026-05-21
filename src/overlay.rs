@@ -1,6 +1,11 @@
 //! Dimension overlay for rendered images.
 //!
-//! Draws a projected 3D bounding box with dimension labels onto rendered output.
+//! Draws dimension labels (X, Y, Z) onto rendered output. The depth-aware
+//! bounding box lines are drawn in the framebuffer (see `render.rs`).
+//!
+//! Note: `BOX_FACES`, `is_face_front_facing`, and `get_front_facing_edges` are
+//! used only for label placement (choosing which edge to label for each axis).
+//! The actual bounding box lines are drawn in render.rs with depth testing.
 
 use glam::Vec3;
 use image::{Rgba, RgbaImage};
@@ -58,6 +63,14 @@ pub struct LabelEdges {
     pub x_edge: (usize, usize),
     pub y_edge: (usize, usize),
     pub z_edge: (usize, usize),
+}
+
+/// Style parameters for text rendering with outline.
+#[derive(Debug, Clone, Copy)]
+struct TextStyle {
+    color: Rgba<u8>,
+    outline_color: Rgba<u8>,
+    scale: u32,
 }
 
 /// 5x7 bitmap font for digits 0-9, decimal point, and letters for units.
@@ -207,22 +220,21 @@ fn compute_average_brightness(image: &RgbaImage) -> f32 {
     }
 }
 
-/// Get the dimension overlay color, suitable for use with Framebuffer.
-/// Returns RGBA color based on config or contrasting with background.
-pub fn get_dimension_color(config: &DimensionConfig, fb: &crate::render::Framebuffer) -> [u8; 4] {
+/// Get the dimension overlay color based on config or contrasting with background.
+pub fn get_dimension_color(config: &DimensionConfig, bg_color: [u8; 4]) -> [u8; 4] {
     if let Some(color) = config.color {
         [color[0], color[1], color[2], 255]
     } else {
-        // Determine contrast color based on background
-        // Sample the center pixel of the framebuffer to determine brightness
-        let center_idx = ((fb.height / 2) * fb.width + (fb.width / 2)) as usize;
-        let bg = fb.get_color(center_idx);
-        let brightness = (bg[0] as u32 * 299 + bg[1] as u32 * 587 + bg[2] as u32 * 114) / 1000;
-        if bg[3] == 0 {
+        let brightness =
+            (bg_color[0] as u32 * 299 + bg_color[1] as u32 * 587 + bg_color[2] as u32 * 114) / 1000;
+        if bg_color[3] == 0 {
+            // Transparent background: use white lines
             [255, 255, 255, 255]
         } else if brightness > 128 {
+            // Light background: use dark lines
             [40, 40, 40, 255]
         } else {
+            // Dark background: use light lines
             [255, 255, 255, 255]
         }
     }
@@ -240,22 +252,6 @@ fn format_dimension(value: f32, units: DimensionUnits) -> String {
     } else {
         format!("{:.2}{}", converted, suffix)
     }
-}
-
-/// Get the 8 corners of a bounding box.
-fn bbox_corners(bounds: &BoundingBox) -> [Vec3; 8] {
-    let min = Vec3::from_array(bounds.min);
-    let max = Vec3::from_array(bounds.max);
-    [
-        Vec3::new(min.x, min.y, min.z), // 0: ---
-        Vec3::new(max.x, min.y, min.z), // 1: +--
-        Vec3::new(min.x, max.y, min.z), // 2: -+-
-        Vec3::new(max.x, max.y, min.z), // 3: ++-
-        Vec3::new(min.x, min.y, max.z), // 4: --+
-        Vec3::new(max.x, min.y, max.z), // 5: +-+
-        Vec3::new(min.x, max.y, max.z), // 6: -++
-        Vec3::new(max.x, max.y, max.z), // 7: +++
-    ]
 }
 
 /// The 6 faces of a bounding box, each defined by 4 corner indices (in order) and outward normal.
@@ -352,7 +348,7 @@ pub fn compute_label_edges(
     width: u32,
     height: u32,
 ) -> LabelEdges {
-    let corners_3d = bbox_corners(bounds);
+    let corners_3d = bounds.corners();
     let corners_2d: Vec<Option<(f32, f32)>> = corners_3d
         .iter()
         .map(|&c| camera.project_to_screen(c, width, height))
@@ -378,9 +374,7 @@ fn draw_edge_label(
     p0: (f32, f32),
     p1: (f32, f32),
     label: &str,
-    color: Rgba<u8>,
-    outline_color: Rgba<u8>,
-    scale: u32,
+    style: &TextStyle,
     offset: f32,
 ) {
     let mid_x = (p0.0 + p1.0) / 2.0;
@@ -393,14 +387,22 @@ fn draw_edge_label(
     let perp_x = -dy / len;
     let perp_y = dx / len;
 
-    let text_width = measure_text(label) * scale;
-    let text_height = FONT_HEIGHT * scale;
+    let text_width = measure_text(label) * style.scale;
+    let text_height = FONT_HEIGHT * style.scale;
 
     // Position label with offset, centered on the edge midpoint
     let label_x = (mid_x + perp_x * offset) as i32 - (text_width as i32 / 2);
     let label_y = (mid_y + perp_y * offset) as i32 - (text_height as i32 / 2);
 
-    draw_text(image, label, label_x, label_y, color, outline_color, scale);
+    draw_text(
+        image,
+        label,
+        label_x,
+        label_y,
+        style.color,
+        style.outline_color,
+        style.scale,
+    );
 }
 
 /// Apply dimension labels to rendered image.
@@ -457,7 +459,7 @@ pub fn apply_dimensions_with_labels(
     };
 
     // Project all 8 corners to screen space for label placement.
-    let corners_3d = bbox_corners(bounds);
+    let corners_3d = bounds.corners();
     let corners_2d: Vec<Option<(f32, f32)>> = corners_3d
         .iter()
         .map(|&c| camera.project_to_screen(c, width, height))
@@ -470,6 +472,11 @@ pub fn apply_dimensions_with_labels(
     let z_label = format!("Z: {}", format_dimension(dims.z, config.units));
 
     let label_offset = 20.0 * scale as f32;
+    let text_style = TextStyle {
+        color: fg_color,
+        outline_color,
+        scale,
+    };
 
     // Use fixed labels if provided, otherwise compute best edges
     let label_edges =
@@ -480,48 +487,21 @@ pub fn apply_dimensions_with_labels(
         corners_2d[label_edges.x_edge.0],
         corners_2d[label_edges.x_edge.1],
     ) {
-        draw_edge_label(
-            image,
-            p0,
-            p1,
-            &x_label,
-            fg_color,
-            outline_color,
-            scale,
-            label_offset,
-        );
+        draw_edge_label(image, p0, p1, &x_label, &text_style, label_offset);
     }
 
     if let (Some(p0), Some(p1)) = (
         corners_2d[label_edges.y_edge.0],
         corners_2d[label_edges.y_edge.1],
     ) {
-        draw_edge_label(
-            image,
-            p0,
-            p1,
-            &y_label,
-            fg_color,
-            outline_color,
-            scale,
-            label_offset,
-        );
+        draw_edge_label(image, p0, p1, &y_label, &text_style, label_offset);
     }
 
     if let (Some(p0), Some(p1)) = (
         corners_2d[label_edges.z_edge.0],
         corners_2d[label_edges.z_edge.1],
     ) {
-        draw_edge_label(
-            image,
-            p0,
-            p1,
-            &z_label,
-            fg_color,
-            outline_color,
-            scale,
-            label_offset,
-        );
+        draw_edge_label(image, p0, p1, &z_label, &text_style, label_offset);
     }
 }
 
@@ -560,11 +540,11 @@ mod tests {
     }
 
     #[test]
-    fn test_bbox_corners() {
+    fn test_bounds_corners() {
         let mut bounds = BoundingBox::new();
         bounds.extend(Vec3::ZERO);
         bounds.extend(Vec3::ONE);
-        let corners = bbox_corners(&bounds);
+        let corners = bounds.corners();
         assert_eq!(corners[0], Vec3::new(0.0, 0.0, 0.0));
         assert_eq!(corners[7], Vec3::new(1.0, 1.0, 1.0));
     }

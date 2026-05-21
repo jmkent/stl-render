@@ -1030,14 +1030,14 @@ fn parse_units(s: &str) -> Result<crate::overlay::DimensionUnits, CliError> {
 
 fn parse_hex_color(s: &str) -> Result<[u8; 3], CliError> {
     let hex = s.trim_start_matches('#');
-    if hex.len() == 6
-        && let (Ok(r), Ok(g), Ok(b)) = (
+    if hex.len() == 6 {
+        if let (Ok(r), Ok(g), Ok(b)) = (
             u8::from_str_radix(&hex[0..2], 16),
             u8::from_str_radix(&hex[2..4], 16),
             u8::from_str_radix(&hex[4..6], 16),
-        )
-    {
-        return Ok([r, g, b]);
+        ) {
+            return Ok([r, g, b]);
+        }
     }
     Err(CliError::InvalidColor(s.to_string()))
 }

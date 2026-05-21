@@ -3,8 +3,52 @@ use image::RgbaImage;
 
 use crate::camera::Camera;
 use crate::cli::{AntiAliasing, Background, LightingPreset, RenderConfig};
-use crate::mesh::compute_normal;
+use crate::mesh::{compute_normal, BoundingBox, BOX_EDGES};
 use crate::stl::Triangle;
+
+/// Style parameters for dashed line rendering.
+#[derive(Debug, Clone, Copy)]
+pub struct LineStyle {
+    pub color: [u8; 4],
+    pub dash_len: i32,
+    pub gap_len: i32,
+    pub thickness: i32,
+}
+
+impl Default for LineStyle {
+    fn default() -> Self {
+        Self {
+            color: [128, 128, 128, 255],
+            dash_len: 6,
+            gap_len: 4,
+            thickness: 1,
+        }
+    }
+}
+
+/// A 2D point in screen space.
+#[derive(Debug, Clone, Copy)]
+struct Point2D {
+    x: f32,
+    y: f32,
+}
+
+/// A point in screen space with depth for z-buffer testing.
+#[derive(Debug, Clone, Copy)]
+pub struct ScreenPoint {
+    pub x: f32,
+    pub y: f32,
+    pub depth: f32,
+}
+
+impl ScreenPoint {
+    fn xy(&self) -> Point2D {
+        Point2D {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
 
 pub struct Framebuffer {
     pub width: u32,
@@ -32,11 +76,6 @@ impl Framebuffer {
         }
     }
 
-    /// Get the color at a specific buffer index.
-    pub fn get_color(&self, idx: usize) -> [u8; 4] {
-        self.color.get(idx).copied().unwrap_or([0, 0, 0, 0])
-    }
-
     pub fn rasterize_triangle(&mut self, tri: &Triangle, camera: &Camera, config: &RenderConfig) {
         let mvp = camera.matrix();
 
@@ -53,14 +92,11 @@ impl Framebuffer {
         let p1 = project_vertex(v1, &mvp, self.width, self.height);
         let p2 = project_vertex(v2, &mvp, self.width, self.height);
 
-        if p0.is_none() || p1.is_none() || p2.is_none() {
+        let (Some(p0), Some(p1), Some(p2)) = (p0, p1, p2) else {
             return;
-        }
-        let (s0, z0) = p0.unwrap();
-        let (s1, z1) = p1.unwrap();
-        let (s2, z2) = p2.unwrap();
+        };
 
-        if is_backfacing(&s0, &s1, &s2) {
+        if is_backfacing_2d(p0.xy(), p1.xy(), p2.xy()) {
             return;
         }
 
@@ -82,36 +118,35 @@ impl Framebuffer {
             None
         };
 
-        let min_x = s0.x.min(s1.x).min(s2.x).max(0.0) as u32;
-        let max_x = s0.x.max(s1.x).max(s2.x).min((self.width - 1) as f32) as u32;
-        let min_y = s0.y.min(s1.y).min(s2.y).max(0.0) as u32;
-        let max_y = s0.y.max(s1.y).max(s2.y).min((self.height - 1) as f32) as u32;
+        let min_x = p0.x.min(p1.x).min(p2.x).max(0.0) as u32;
+        let max_x = p0.x.max(p1.x).max(p2.x).min((self.width - 1) as f32) as u32;
+        let min_y = p0.y.min(p1.y).min(p2.y).max(0.0) as u32;
+        let max_y = p0.y.max(p1.y).max(p2.y).min((self.height - 1) as f32) as u32;
 
         for y in min_y..=max_y {
             for x in min_x..=max_x {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, 0.0);
+                let p = Point2D {
+                    x: x as f32 + 0.5,
+                    y: y as f32 + 0.5,
+                };
 
-                if let Some((u, v, w)) = barycentric(&s0, &s1, &s2, &p)
-                    && u >= 0.0
-                    && v >= 0.0
-                    && w >= 0.0
-                {
-                    let z = u * z0 + v * z1 + w * z2;
-                    let idx = (y * self.width + x) as usize;
+                if let Some((u, v, w)) = barycentric_2d(p0.xy(), p1.xy(), p2.xy(), p) {
+                    if u >= 0.0 && v >= 0.0 && w >= 0.0 {
+                        let z = u * p0.depth + v * p1.depth + w * p2.depth;
+                        let idx = (y * self.width + x) as usize;
 
-                    if z < self.depth[idx] {
-                        self.depth[idx] = z;
+                        if z < self.depth[idx] {
+                            self.depth[idx] = z;
 
-                        // Compute pixel color
-                        let shade = if let Some(vc) = vertex_colors {
-                            // Interpolate vertex colors using barycentric coordinates (sRGB space per 3MF spec)
-                            let interp = interpolate_vertex_colors(vc, u, v, w);
-                            apply_lighting([interp[0], interp[1], interp[2]], lighting)
-                        } else {
-                            uniform_shade.unwrap()
-                        };
+                            let shade = if let Some(vc) = vertex_colors {
+                                let interp = interpolate_vertex_colors(vc, u, v, w);
+                                apply_lighting([interp[0], interp[1], interp[2]], lighting)
+                            } else {
+                                uniform_shade.unwrap()
+                            };
 
-                        self.color[idx] = shade;
+                            self.color[idx] = shade;
+                        }
                     }
                 }
             }
@@ -166,36 +201,23 @@ impl Framebuffer {
     }
 
     /// Draw a depth-tested dashed line between two screen-space points.
-    /// Points are (x, y, depth) where depth is the NDC z value.
-    pub fn draw_dashed_line(
-        &mut self,
-        x0: f32,
-        y0: f32,
-        z0: f32,
-        x1: f32,
-        y1: f32,
-        z1: f32,
-        color: [u8; 4],
-        dash_len: i32,
-        gap_len: i32,
-        thickness: i32,
-    ) {
-        let dx = x1 - x0;
-        let dy = y1 - y0;
-        let dz = z1 - z0;
+    fn draw_dashed_line(&mut self, from: &ScreenPoint, to: &ScreenPoint, style: &LineStyle) {
+        let dx = to.x - from.x;
+        let dy = to.y - from.y;
+        let dz = to.depth - from.depth;
         let len = (dx * dx + dy * dy).sqrt();
         if len < 1.0 {
             return;
         }
 
         let steps = len as i32;
-        let cycle = dash_len + gap_len;
+        let cycle = style.dash_len + style.gap_len;
 
         for i in 0..=steps {
             let t = i as f32 / steps as f32;
-            let x = x0 + dx * t;
-            let y = y0 + dy * t;
-            let z = z0 + dz * t;
+            let x = from.x + dx * t;
+            let y = from.y + dy * t;
+            let z = from.depth + dz * t;
 
             let px = x as i32;
             let py = y as i32;
@@ -206,11 +228,11 @@ impl Framebuffer {
             }
 
             // Check if in dash (not gap)
-            if (i % cycle) >= dash_len {
+            if (i % cycle) >= style.dash_len {
                 continue;
             }
 
-            let radius = (thickness.max(1) - 1) / 2;
+            let radius = (style.thickness.max(1) - 1) / 2;
             for oy in -radius..=radius {
                 for ox in -radius..=radius {
                     let tx = px + ox;
@@ -224,7 +246,7 @@ impl Framebuffer {
                     // Depth test: only draw if this pixel is closer than existing
                     if z < self.depth[idx] {
                         self.depth[idx] = z;
-                        self.color[idx] = color;
+                        self.color[idx] = style.color;
                     }
                 }
             }
@@ -232,66 +254,25 @@ impl Framebuffer {
     }
 
     /// Draw the bounding box edges with depth testing.
-    pub fn draw_bounding_box(
-        &mut self,
-        bounds: &crate::mesh::BoundingBox,
-        camera: &Camera,
-        color: [u8; 4],
-        dash_len: i32,
-        gap_len: i32,
-        thickness: i32,
-    ) {
-        use glam::Vec3;
-
-        let min = Vec3::from_array(bounds.min);
-        let max = Vec3::from_array(bounds.max);
-
-        // 8 corners of the bounding box
-        let corners = [
-            Vec3::new(min.x, min.y, min.z), // 0: ---
-            Vec3::new(max.x, min.y, min.z), // 1: +--
-            Vec3::new(min.x, max.y, min.z), // 2: -+-
-            Vec3::new(max.x, max.y, min.z), // 3: ++-
-            Vec3::new(min.x, min.y, max.z), // 4: --+
-            Vec3::new(max.x, min.y, max.z), // 5: +-+
-            Vec3::new(min.x, max.y, max.z), // 6: -++
-            Vec3::new(max.x, max.y, max.z), // 7: +++
-        ];
+    pub fn draw_bounding_box(&mut self, bounds: &BoundingBox, camera: &Camera, style: &LineStyle) {
+        let corners = bounds.corners();
 
         // Project corners to screen space
         let mvp = camera.matrix();
-        let projected: Vec<Option<(Vec3, f32)>> = corners
+        let projected: Vec<Option<ScreenPoint>> = corners
             .iter()
             .map(|&c| project_vertex(c, &mvp, self.width, self.height))
             .collect();
 
-        // 12 edges of the box
-        let edges = [
-            (0, 1),
-            (1, 3),
-            (3, 2),
-            (2, 0), // bottom face
-            (4, 5),
-            (5, 7),
-            (7, 6),
-            (6, 4), // top face
-            (0, 4),
-            (1, 5),
-            (2, 6),
-            (3, 7), // vertical edges
-        ];
-
-        for &(i, j) in &edges {
-            if let (Some((p0, z0)), Some((p1, z1))) = (projected[i], projected[j]) {
-                self.draw_dashed_line(
-                    p0.x, p0.y, z0, p1.x, p1.y, z1, color, dash_len, gap_len, thickness,
-                );
+        for &(i, j) in &BOX_EDGES {
+            if let (Some(p0), Some(p1)) = (&projected[i], &projected[j]) {
+                self.draw_dashed_line(p0, p1, style);
             }
         }
     }
 }
 
-fn project_vertex(v: Vec3, mvp: &Mat4, width: u32, height: u32) -> Option<(Vec3, f32)> {
+fn project_vertex(v: Vec3, mvp: &Mat4, width: u32, height: u32) -> Option<ScreenPoint> {
     let clip = *mvp * Vec4::new(v.x, v.y, v.z, 1.0);
 
     if clip.w.abs() < 1e-6 {
@@ -304,32 +285,35 @@ fn project_vertex(v: Vec3, mvp: &Mat4, width: u32, height: u32) -> Option<(Vec3,
         return None;
     }
 
-    let screen = Vec3::new(
-        (ndc.x + 1.0) * 0.5 * width as f32,
-        (1.0 - ndc.y) * 0.5 * height as f32,
-        0.0,
-    );
-
-    Some((screen, ndc.z))
+    Some(ScreenPoint {
+        x: (ndc.x + 1.0) * 0.5 * width as f32,
+        y: (1.0 - ndc.y) * 0.5 * height as f32,
+        depth: ndc.z,
+    })
 }
 
-fn is_backfacing(v0: &Vec3, v1: &Vec3, v2: &Vec3) -> bool {
-    let edge1 = *v1 - *v0;
-    let edge2 = *v2 - *v0;
-    let cross = edge1.x * edge2.y - edge1.y * edge2.x;
+fn is_backfacing_2d(v0: Point2D, v1: Point2D, v2: Point2D) -> bool {
+    let edge1_x = v1.x - v0.x;
+    let edge1_y = v1.y - v0.y;
+    let edge2_x = v2.x - v0.x;
+    let edge2_y = v2.y - v0.y;
+    let cross = edge1_x * edge2_y - edge1_y * edge2_x;
     cross >= 0.0
 }
 
-fn barycentric(v0: &Vec3, v1: &Vec3, v2: &Vec3, p: &Vec3) -> Option<(f32, f32, f32)> {
-    let v0v1 = *v1 - *v0;
-    let v0v2 = *v2 - *v0;
-    let v0p = *p - *v0;
+fn barycentric_2d(v0: Point2D, v1: Point2D, v2: Point2D, p: Point2D) -> Option<(f32, f32, f32)> {
+    let v0v1_x = v1.x - v0.x;
+    let v0v1_y = v1.y - v0.y;
+    let v0v2_x = v2.x - v0.x;
+    let v0v2_y = v2.y - v0.y;
+    let v0p_x = p.x - v0.x;
+    let v0p_y = p.y - v0.y;
 
-    let d00 = v0v1.x * v0v1.x + v0v1.y * v0v1.y;
-    let d01 = v0v1.x * v0v2.x + v0v1.y * v0v2.y;
-    let d11 = v0v2.x * v0v2.x + v0v2.y * v0v2.y;
-    let d20 = v0p.x * v0v1.x + v0p.y * v0v1.y;
-    let d21 = v0p.x * v0v2.x + v0p.y * v0v2.y;
+    let d00 = v0v1_x * v0v1_x + v0v1_y * v0v1_y;
+    let d01 = v0v1_x * v0v2_x + v0v1_y * v0v2_y;
+    let d11 = v0v2_x * v0v2_x + v0v2_y * v0v2_y;
+    let d20 = v0p_x * v0v1_x + v0p_y * v0v1_y;
+    let d21 = v0p_x * v0v2_x + v0p_y * v0v2_y;
 
     let denom = d00 * d11 - d01 * d01;
     if denom.abs() < 1e-10 {

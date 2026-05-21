@@ -22,10 +22,10 @@ fn run() -> Result<(), RenderError> {
     }
 
     // Create output directory if needed
-    if let Some(ref dir) = batch_config.output_dir
-        && !dir.exists()
-    {
-        fs::create_dir_all(dir).map_err(|e| RenderError::Output(OutputError::Io(e)))?;
+    if let Some(ref dir) = batch_config.output_dir {
+        if !dir.exists() {
+            fs::create_dir_all(dir).map_err(|e| RenderError::Output(OutputError::Io(e)))?;
+        }
     }
 
     let is_batch = batch_config.is_batch_mode();
@@ -108,11 +108,10 @@ fn run() -> Result<(), RenderError> {
 }
 
 fn ensure_parent_dir(path: &std::path::Path) -> Result<(), RenderError> {
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent).map_err(|e| RenderError::Output(OutputError::Io(e)))?;
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| RenderError::Output(OutputError::Io(e)))?;
+        }
     }
     Ok(())
 }

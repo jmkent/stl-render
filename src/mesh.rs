@@ -56,7 +56,32 @@ impl BoundingBox {
             self.extend(Vec3::from_array(*v));
         }
     }
+
+    /// Returns the 8 corners of the bounding box.
+    /// Order: 0=---, 1=+--, 2=-+-, 3=++-, 4=--+, 5=+-+, 6=-++, 7=+++
+    pub fn corners(&self) -> [Vec3; 8] {
+        let min = Vec3::from_array(self.min);
+        let max = Vec3::from_array(self.max);
+        [
+            Vec3::new(min.x, min.y, min.z), // 0: ---
+            Vec3::new(max.x, min.y, min.z), // 1: +--
+            Vec3::new(min.x, max.y, min.z), // 2: -+-
+            Vec3::new(max.x, max.y, min.z), // 3: ++-
+            Vec3::new(min.x, min.y, max.z), // 4: --+
+            Vec3::new(max.x, min.y, max.z), // 5: +-+
+            Vec3::new(min.x, max.y, max.z), // 6: -++
+            Vec3::new(max.x, max.y, max.z), // 7: +++
+        ]
+    }
 }
+
+/// The 12 edges of a bounding box as (corner_a, corner_b) pairs.
+/// Indices refer to corners from `BoundingBox::corners()`.
+pub const BOX_EDGES: [(usize, usize); 12] = [
+    (0, 1), (1, 3), (3, 2), (2, 0),  // bottom face (Z=min)
+    (4, 5), (5, 7), (7, 6), (6, 4),  // top face (Z=max)
+    (0, 4), (1, 5), (2, 6), (3, 7),  // vertical edges
+];
 
 /// Compute bounding box by streaming through all triangles.
 /// Does not store the mesh in memory.
