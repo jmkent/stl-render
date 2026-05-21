@@ -3,7 +3,7 @@ use image::RgbaImage;
 
 use crate::camera::Camera;
 use crate::cli::{AntiAliasing, Background, LightingPreset, RenderConfig};
-use crate::mesh::{compute_normal, BoundingBox, BOX_EDGES};
+use crate::mesh::{BOX_EDGES, BoundingBox, compute_normal};
 use crate::stl::Triangle;
 
 /// Style parameters for dashed line rendering.
@@ -130,23 +130,25 @@ impl Framebuffer {
                     y: y as f32 + 0.5,
                 };
 
-                if let Some((u, v, w)) = barycentric_2d(p0.xy(), p1.xy(), p2.xy(), p) {
-                    if u >= 0.0 && v >= 0.0 && w >= 0.0 {
-                        let z = u * p0.depth + v * p1.depth + w * p2.depth;
-                        let idx = (y * self.width + x) as usize;
+                if let Some((u, v, w)) = barycentric_2d(p0.xy(), p1.xy(), p2.xy(), p)
+                    && u >= 0.0
+                    && v >= 0.0
+                    && w >= 0.0
+                {
+                    let z = u * p0.depth + v * p1.depth + w * p2.depth;
+                    let idx = (y * self.width + x) as usize;
 
-                        if z < self.depth[idx] {
-                            self.depth[idx] = z;
+                    if z < self.depth[idx] {
+                        self.depth[idx] = z;
 
-                            let shade = if let Some(vc) = vertex_colors {
-                                let interp = interpolate_vertex_colors(vc, u, v, w);
-                                apply_lighting([interp[0], interp[1], interp[2]], lighting)
-                            } else {
-                                uniform_shade.unwrap()
-                            };
+                        let shade = if let Some(vc) = vertex_colors {
+                            let interp = interpolate_vertex_colors(vc, u, v, w);
+                            apply_lighting([interp[0], interp[1], interp[2]], lighting)
+                        } else {
+                            uniform_shade.unwrap()
+                        };
 
-                            self.color[idx] = shade;
-                        }
+                        self.color[idx] = shade;
                     }
                 }
             }

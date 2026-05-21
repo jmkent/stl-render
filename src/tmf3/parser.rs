@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::io::{Read, Seek};
 
 use glam::{Mat4, Vec3, Vec4};
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::mesh::compute_normal;
 use crate::stl::{StlError, Triangle};
@@ -77,10 +77,10 @@ fn find_model_file<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<S
 
     for candidate in &candidates {
         for i in 0..archive.len() {
-            if let Ok(file) = archive.by_index(i) {
-                if file.name().eq_ignore_ascii_case(candidate) {
-                    return Ok(file.name().to_string());
-                }
+            if let Ok(file) = archive.by_index(i)
+                && file.name().eq_ignore_ascii_case(candidate)
+            {
+                return Ok(file.name().to_string());
             }
         }
     }
@@ -199,10 +199,10 @@ fn parse_model_structure(xml: &str) -> Result<Model3mf, StlError> {
                 match local_name.as_ref() {
                     b"model" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"unit" {
-                                if let Ok(s) = std::str::from_utf8(&attr.value) {
-                                    unit = Unit3mf::from_str(s);
-                                }
+                            if attr.key.as_ref() == b"unit"
+                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            {
+                                unit = Unit3mf::from_str(s);
                             }
                         }
                     }
@@ -657,10 +657,10 @@ fn parse_triangle_data(e: &quick_xml::events::BytesStart<'_>) -> Result<Triangle
 /// Parse a color element from a colorgroup: <color color="#RRGGBB"/> or <color color="#RRGGBBAA"/>
 fn parse_color(e: &quick_xml::events::BytesStart<'_>) -> Option<[u8; 4]> {
     for attr in e.attributes().flatten() {
-        if attr.key.as_ref() == b"color" {
-            if let Ok(s) = std::str::from_utf8(&attr.value) {
-                return parse_hex_color_3mf(s);
-            }
+        if attr.key.as_ref() == b"color"
+            && let Ok(s) = std::str::from_utf8(&attr.value)
+        {
+            return parse_hex_color_3mf(s);
         }
     }
     None

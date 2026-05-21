@@ -1,8 +1,8 @@
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::stl::{StlError, Triangle};
 use crate::MeshReader;
+use crate::stl::{StlError, Triangle};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct BoundingBox {
