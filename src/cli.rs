@@ -713,7 +713,7 @@ fn output_relative_path(
     let file_name = if include_view {
         format!("{}.{}.{}", stem, view_config_name(view), extension)
     } else {
-        format!("{}.{}", stem, extension)
+        format!("{stem}.{extension}")
     };
     output.set_file_name(file_name);
     output

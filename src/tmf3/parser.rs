@@ -58,12 +58,12 @@ pub struct Parse3mfResult {
 /// Parse a 3MF file and return triangles with unit info.
 pub fn parse_3mf<R: Read + Seek>(reader: R) -> Result<Parse3mfResult, StlError> {
     let mut archive = zip::ZipArchive::new(reader)
-        .map_err(|e| StlError::InvalidFormat(format!("invalid ZIP archive: {}", e)))?;
+        .map_err(|e| StlError::InvalidFormat(format!("invalid ZIP archive: {e}")))?;
 
     let model_path = find_model_file(&mut archive)?;
 
     let mut model_file = archive.by_name(&model_path).map_err(|e| {
-        StlError::InvalidFormat(format!("failed to read model file '{}': {}", model_path, e))
+        StlError::InvalidFormat(format!("failed to read model file '{model_path}': {e}"))
     })?;
 
     let mut xml_content = String::new();
@@ -692,21 +692,21 @@ fn parse_float_attr(value: &[u8]) -> Result<f32, StlError> {
     let s = std::str::from_utf8(value)
         .map_err(|_| StlError::InvalidFormat("invalid UTF-8 in attribute".into()))?;
     s.parse::<f32>()
-        .map_err(|_| StlError::InvalidFormat(format!("invalid float value: {}", s)))
+        .map_err(|_| StlError::InvalidFormat(format!("invalid float value: {s}")))
 }
 
 fn parse_usize_attr(value: &[u8]) -> Result<usize, StlError> {
     let s = std::str::from_utf8(value)
         .map_err(|_| StlError::InvalidFormat("invalid UTF-8 in attribute".into()))?;
     s.parse::<usize>()
-        .map_err(|_| StlError::InvalidFormat(format!("invalid integer value: {}", s)))
+        .map_err(|_| StlError::InvalidFormat(format!("invalid integer value: {s}")))
 }
 
 fn parse_u32_attr(value: &[u8]) -> Result<u32, StlError> {
     let s = std::str::from_utf8(value)
         .map_err(|_| StlError::InvalidFormat("invalid UTF-8 in attribute".into()))?;
     s.parse::<u32>()
-        .map_err(|_| StlError::InvalidFormat(format!("invalid integer value: {}", s)))
+        .map_err(|_| StlError::InvalidFormat(format!("invalid integer value: {s}")))
 }
 
 #[cfg(test)]

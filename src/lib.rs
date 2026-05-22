@@ -654,7 +654,7 @@ fn render_print_grid_to_image(
         // Copy quadrant into composite
         composite
             .copy_from(&quad_image, x_offset, y_offset)
-            .map_err(|e| RenderError::Config(format!("failed to composite grid: {}", e)))?;
+            .map_err(|e| RenderError::Config(format!("failed to composite grid: {e}")))?;
     }
 
     if config.verbose {

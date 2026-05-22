@@ -64,20 +64,17 @@ fn test_missing_input_file_exit_code() {
 fn assert_invalid_args(args: &[&str], expected_message: &str) {
     let output = stl_render().args(args).output().unwrap();
 
-    assert!(!output.status.success(), "Command should fail: {:?}", args);
+    assert!(!output.status.success(), "Command should fail: {args:?}");
     assert_eq!(
         output.status.code(),
         Some(1),
-        "Invalid args should be usage/config errors: {:?}",
-        args
+        "Invalid args should be usage/config errors: {args:?}"
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(expected_message),
-        "stderr should contain {:?}: {}",
-        expected_message,
-        stderr
+        "stderr should contain {expected_message:?}: {stderr}"
     );
 }
 
@@ -216,13 +213,11 @@ fn test_help_flag() {
     assert!(stdout.contains("Render STL, OBJ, and 3MF files to PNG"));
     assert!(
         stdout.contains("tan, blue-grey"),
-        "Help should list material color presets: {}",
-        stdout
+        "Help should list material color presets: {stdout}"
     );
     assert!(
         stdout.contains("--recursive"),
-        "Help should list recursive mode: {}",
-        stdout
+        "Help should list recursive mode: {stdout}"
     );
 }
 
@@ -294,8 +289,7 @@ fn test_render_produces_visible_content() {
 
     assert!(
         non_transparent > 1000,
-        "Rendered image should have visible content: {} non-transparent pixels",
-        non_transparent
+        "Rendered image should have visible content: {non_transparent} non-transparent pixels"
     );
 }
 
@@ -328,9 +322,7 @@ fn test_material_color_red() {
 
     assert!(
         avg_r > avg_b * 2,
-        "Red material should have more R than B: r={}, b={}",
-        avg_r,
-        avg_b
+        "Red material should have more R than B: r={avg_r}, b={avg_b}"
     );
 }
 
@@ -672,8 +664,7 @@ fn test_truncated_file_error() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("error") || stderr.contains("Error"),
-        "Should print error message: {}",
-        stderr
+        "Should print error message: {stderr}"
     );
 }
 
@@ -710,13 +701,11 @@ fn test_empty_stl_render_is_input_error() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("no triangles"),
-        "Should explain that there are no triangles: {}",
-        stderr
+        "Should explain that there are no triangles: {stderr}"
     );
     assert!(
         !stderr.contains("inf") && !stderr.contains("NaN"),
-        "Verbose output should not expose invalid bounds: {}",
-        stderr
+        "Verbose output should not expose invalid bounds: {stderr}"
     );
 }
 
@@ -740,8 +729,7 @@ fn test_verbose_shows_triangle_count() {
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
         stderr.contains("12 triangles"),
-        "Verbose should show triangle count: {}",
-        stderr
+        "Verbose should show triangle count: {stderr}"
     );
 }
 
@@ -905,8 +893,7 @@ fn test_batch_summary_output() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("2 file(s)"),
-        "Should show summary: {}",
-        stderr
+        "Should show summary: {stderr}"
     );
 }
 
@@ -933,16 +920,14 @@ fn test_batch_reports_each_conversion() {
             "Rendered fixtures/cube.stl as {} successful",
             outdir.join("cube.png").display()
         )),
-        "Should show cube conversion line: {}",
-        stderr
+        "Should show cube conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
             "Rendered fixtures/sphere.stl as {} successful",
             outdir.join("sphere.png").display()
         )),
-        "Should show sphere conversion line: {}",
-        stderr
+        "Should show sphere conversion line: {stderr}"
     );
 }
 
@@ -969,16 +954,14 @@ fn test_batch_reports_failed_conversion() {
             "Rendered fixtures/cube.stl as {} successful",
             outdir.join("cube.png").display()
         )),
-        "Should show successful conversion line: {}",
-        stderr
+        "Should show successful conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
             "Rendered fixtures/nonexistent.stl as {} failed",
             outdir.join("nonexistent.png").display()
         )),
-        "Should show failed conversion line: {}",
-        stderr
+        "Should show failed conversion line: {stderr}"
     );
 }
 
@@ -1024,8 +1007,7 @@ fn test_batch_recursive_renders_nested_directories() {
             input_root.join("cube.stl").display(),
             outdir.join("cube.stl.png").display()
         )),
-        "Should show root conversion line: {}",
-        stderr
+        "Should show root conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
@@ -1033,8 +1015,7 @@ fn test_batch_recursive_renders_nested_directories() {
             input_root.join("cube.OBJ").display(),
             outdir.join("cube.OBJ.png").display()
         )),
-        "Should show uppercase OBJ conversion line: {}",
-        stderr
+        "Should show uppercase OBJ conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
@@ -1042,8 +1023,7 @@ fn test_batch_recursive_renders_nested_directories() {
             input_root.join("cube.3MF").display(),
             outdir.join("cube.3MF.png").display()
         )),
-        "Should show uppercase 3MF conversion line: {}",
-        stderr
+        "Should show uppercase 3MF conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
@@ -1051,8 +1031,7 @@ fn test_batch_recursive_renders_nested_directories() {
             nested.join("sphere.obj").display(),
             outdir.join("nested/sphere.obj.png").display()
         )),
-        "Should show nested OBJ conversion line: {}",
-        stderr
+        "Should show nested OBJ conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
@@ -1060,8 +1039,7 @@ fn test_batch_recursive_renders_nested_directories() {
             nested.join("sphere.3mf").display(),
             outdir.join("nested/sphere.3mf.png").display()
         )),
-        "Should show nested 3MF conversion line: {}",
-        stderr
+        "Should show nested 3MF conversion line: {stderr}"
     );
 }
 
@@ -1102,8 +1080,7 @@ fn test_batch_directory_input_renders_supported_formats_without_recursive() {
             input_root.join("cube.stl").display(),
             outdir.join("cube.stl.png").display()
         )),
-        "Should show STL conversion line: {}",
-        stderr
+        "Should show STL conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
@@ -1111,8 +1088,7 @@ fn test_batch_directory_input_renders_supported_formats_without_recursive() {
             input_root.join("cube.OBJ").display(),
             outdir.join("cube.OBJ.png").display()
         )),
-        "Should show uppercase OBJ conversion line: {}",
-        stderr
+        "Should show uppercase OBJ conversion line: {stderr}"
     );
     assert!(
         stderr.contains(&format!(
@@ -1120,8 +1096,7 @@ fn test_batch_directory_input_renders_supported_formats_without_recursive() {
             input_root.join("cube.3mf").display(),
             outdir.join("cube.3mf.png").display()
         )),
-        "Should show 3MF conversion line: {}",
-        stderr
+        "Should show 3MF conversion line: {stderr}"
     );
 }
 
@@ -1385,12 +1360,7 @@ fn test_print_grid_has_visible_content_in_all_quadrants() {
         }
         assert!(
             non_transparent > 100,
-            "Quadrant ({},{}) to ({},{}) should have visible content, found {} pixels",
-            x1,
-            y1,
-            x2,
-            y2,
-            non_transparent
+            "Quadrant ({x1},{y1}) to ({x2},{y2}) should have visible content, found {non_transparent} pixels"
         );
     }
 }
@@ -1421,8 +1391,7 @@ fn assert_print_grid_from_stdin(input_path: &str) {
 
     assert!(
         status.success(),
-        "print-grid should read {} from stdin",
-        input_path
+        "print-grid should read {input_path} from stdin"
     );
     assert!(output.exists());
 
@@ -1656,7 +1625,7 @@ fn test_3mf_with_all_view_presets() {
     let dir = tempfile::tempdir().unwrap();
 
     for view in ["iso", "front", "top", "print", "print-front", "print-grid"] {
-        let output = dir.path().join(format!("{}.png", view));
+        let output = dir.path().join(format!("{view}.png"));
 
         let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
             .args(["fixtures/cube.3mf", "-o"])
@@ -1665,8 +1634,8 @@ fn test_3mf_with_all_view_presets() {
             .status()
             .unwrap();
 
-        assert!(status.success(), "view {} failed", view);
-        assert!(output.exists(), "view {} produced no output", view);
+        assert!(status.success(), "view {view} failed");
+        assert!(output.exists(), "view {view} produced no output");
     }
 }
 
@@ -1744,8 +1713,7 @@ fn test_malformed_3mf_error() {
     let stderr = String::from_utf8_lossy(&output_result.stderr);
     assert!(
         stderr.contains("invalid") || stderr.contains("ZIP") || stderr.contains("error"),
-        "expected error message about invalid 3MF, got: {}",
-        stderr
+        "expected error message about invalid 3MF, got: {stderr}"
     );
 }
 
@@ -1764,8 +1732,7 @@ fn test_missing_model_3mf_error() {
     let stderr = String::from_utf8_lossy(&output_result.stderr);
     assert!(
         stderr.contains("model") || stderr.contains("3dmodel") || stderr.contains("missing"),
-        "expected error about missing model file, got: {}",
-        stderr
+        "expected error about missing model file, got: {stderr}"
     );
 }
 
@@ -1878,7 +1845,7 @@ fn test_obj_with_all_view_presets() {
     let dir = tempfile::tempdir().unwrap();
 
     for view in ["iso", "front", "top", "print", "print-front", "print-grid"] {
-        let output = dir.path().join(format!("{}.png", view));
+        let output = dir.path().join(format!("{view}.png"));
 
         let status = Command::new(env!("CARGO_BIN_EXE_stl-render"))
             .args(["fixtures/cube.obj", "-o"])
@@ -1887,8 +1854,8 @@ fn test_obj_with_all_view_presets() {
             .status()
             .unwrap();
 
-        assert!(status.success(), "view {} failed", view);
-        assert!(output.exists(), "view {} produced no output", view);
+        assert!(status.success(), "view {view} failed");
+        assert!(output.exists(), "view {view} produced no output");
     }
 }
 
@@ -2144,8 +2111,7 @@ fn test_zero_width_returns_config_error() {
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
         stderr.contains("width must be greater than 0"),
-        "error should mention width: {}",
-        stderr
+        "error should mention width: {stderr}"
     );
 }
 
@@ -2173,8 +2139,7 @@ fn test_zero_height_returns_config_error() {
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
         stderr.contains("height must be greater than 0"),
-        "error should mention height: {}",
-        stderr
+        "error should mention height: {stderr}"
     );
 }
 
@@ -2203,8 +2168,7 @@ fn test_zero_frames_with_animate_returns_config_error() {
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
         stderr.contains("frames must be greater than 0"),
-        "error should mention frames: {}",
-        stderr
+        "error should mention frames: {stderr}"
     );
 }
 
@@ -2224,8 +2188,7 @@ fn test_negative_padding_returns_config_error() {
     let msg = err.to_string();
     assert!(
         msg.contains("padding cannot be negative"),
-        "error should mention padding: {}",
-        msg
+        "error should mention padding: {msg}"
     );
 }
 
@@ -2244,8 +2207,7 @@ fn test_excessive_padding_returns_config_error() {
     let msg = err.to_string();
     assert!(
         msg.contains("padding cannot exceed 1.0"),
-        "error should mention padding limit: {}",
-        msg
+        "error should mention padding limit: {msg}"
     );
 }
 

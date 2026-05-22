@@ -473,8 +473,7 @@ mod tests {
         let filled_count = fb.color.iter().filter(|c| c[3] > 0).count();
         assert!(
             filled_count > 100,
-            "Triangle should fill significant area: {}",
-            filled_count
+            "Triangle should fill significant area: {filled_count}"
         );
     }
 
@@ -530,8 +529,7 @@ mod tests {
         let pixel = fb.color[center_idx];
         assert!(
             pixel[1] > pixel[0],
-            "Nearer green triangle should win: {:?}",
-            pixel
+            "Nearer green triangle should win: {pixel:?}"
         );
     }
 
@@ -562,7 +560,7 @@ mod tests {
 
         let shade = compute_shade(normal, &view_matrix, LightingPreset::Flat, material);
 
-        assert!(shade[0] > 150, "Facing light should be bright: {:?}", shade);
+        assert!(shade[0] > 150, "Facing light should be bright: {shade:?}");
     }
 
     #[test]
@@ -575,8 +573,7 @@ mod tests {
 
         assert!(
             shade[0] < 50,
-            "Facing away should be dark (ambient only): {:?}",
-            shade
+            "Facing away should be dark (ambient only): {shade:?}"
         );
     }
 
@@ -695,14 +692,11 @@ mod tests {
 
         assert!(
             front[0] > 100,
-            "Front should be well-lit in studio: {:?}",
-            front
+            "Front should be well-lit in studio: {front:?}"
         );
         assert!(
             left[0] != right[0],
-            "Studio lighting should be asymmetric: left={:?}, right={:?}",
-            left,
-            right
+            "Studio lighting should be asymmetric: left={left:?}, right={right:?}"
         );
     }
 
@@ -764,10 +758,7 @@ mod tests {
 
         assert!(
             flat != studio || studio != technical,
-            "Different presets should produce different results: flat={:?}, studio={:?}, technical={:?}",
-            flat,
-            studio,
-            technical
+            "Different presets should produce different results: flat={flat:?}, studio={studio:?}, technical={technical:?}"
         );
     }
 }

@@ -56,18 +56,18 @@ fn run() -> Result<(), RenderError> {
             Ok(_metadata) => {
                 success_count += 1;
                 if is_batch && !quiet {
-                    eprintln!("Rendered {} as {} successful", input_name, output_name);
+                    eprintln!("Rendered {input_name} as {output_name} successful");
                 }
             }
             Err(e) => {
                 if is_batch && !quiet {
-                    eprintln!("Rendered {} as {} failed", input_name, output_name);
+                    eprintln!("Rendered {input_name} as {output_name} failed");
                 }
                 if strict {
                     return Err(e);
                 }
                 if !quiet {
-                    eprintln!("error: {}: {}", input_name, e);
+                    eprintln!("error: {input_name}: {e}");
                 }
                 errors.push((input_name, e));
             }
@@ -77,7 +77,7 @@ fn run() -> Result<(), RenderError> {
     // Print summary for batch mode
     if is_batch && !quiet {
         if errors.is_empty() {
-            eprintln!("Rendered {} file(s) successfully", success_count);
+            eprintln!("Rendered {success_count} file(s) successfully");
         } else {
             eprintln!(
                 "Rendered {} of {} file(s), {} error(s)",

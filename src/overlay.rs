@@ -246,11 +246,11 @@ fn format_dimension(value: f32, units: DimensionUnits) -> String {
     let suffix = units.suffix();
 
     if converted >= 100.0 {
-        format!("{:.0}{}", converted, suffix)
+        format!("{converted:.0}{suffix}")
     } else if converted >= 10.0 {
-        format!("{:.1}{}", converted, suffix)
+        format!("{converted:.1}{suffix}")
     } else {
-        format!("{:.2}{}", converted, suffix)
+        format!("{converted:.2}{suffix}")
     }
 }
 

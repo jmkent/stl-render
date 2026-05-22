@@ -370,8 +370,8 @@ mod tests {
             ViewPreset::Print,
         ] {
             let camera = Camera::from_preset(preset, &bounds, 512, 512, 0.08);
-            assert!(!camera.view_matrix.is_nan(), "NaN in {:?} view", preset);
-            assert!(!camera.proj_matrix.is_nan(), "NaN in {:?} proj", preset);
+            assert!(!camera.view_matrix.is_nan(), "NaN in {preset:?} view");
+            assert!(!camera.proj_matrix.is_nan(), "NaN in {preset:?} proj");
         }
     }
 
@@ -436,9 +436,7 @@ mod tests {
             let clip = mvp.project_point3(corner);
             assert!(
                 clip.x.abs() <= 1.01 && clip.y.abs() <= 1.01,
-                "Corner {:?} projects outside NDC: {:?}",
-                corner,
-                clip
+                "Corner {corner:?} projects outside NDC: {clip:?}"
             );
         }
     }
@@ -492,11 +490,7 @@ mod tests {
         }
 
         // With no padding, corners should reach close to edge
-        assert!(
-            max_extent > 0.9,
-            "Model should fill viewport: {}",
-            max_extent
-        );
+        assert!(max_extent > 0.9, "Model should fill viewport: {max_extent}");
     }
 
     #[test]
@@ -514,8 +508,7 @@ mod tests {
         // With 20% padding, model should be smaller
         assert!(
             max_extent < 0.9,
-            "With padding, model should not fill viewport: {}",
-            max_extent
+            "With padding, model should not fill viewport: {max_extent}"
         );
     }
 
@@ -532,9 +525,7 @@ mod tests {
             let clip = mvp.project_point3(corner);
             assert!(
                 clip.x.abs() <= 1.01 && clip.y.abs() <= 1.01,
-                "Corner {:?} outside NDC in wide viewport: {:?}",
-                corner,
-                clip
+                "Corner {corner:?} outside NDC in wide viewport: {clip:?}"
             );
         }
     }
@@ -558,8 +549,7 @@ mod tests {
                 for j in 0..4 {
                     assert!(
                         mvp.col(i)[j].is_finite(),
-                        "Print preset {:?} produced NaN/Inf in matrix",
-                        preset
+                        "Print preset {preset:?} produced NaN/Inf in matrix"
                     );
                 }
             }
@@ -569,9 +559,7 @@ mod tests {
                 let clip = mvp.project_point3(corner);
                 assert!(
                     clip.x.is_finite() && clip.y.is_finite() && clip.z.is_finite(),
-                    "Print preset {:?} produced NaN/Inf projection for {:?}",
-                    preset,
-                    corner
+                    "Print preset {preset:?} produced NaN/Inf projection for {corner:?}"
                 );
             }
         }
