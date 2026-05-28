@@ -57,7 +57,7 @@ The parser supports the 3MF Materials extension for embedded colors:
 
 **Rendering:**
 - Per-vertex colors are interpolated using barycentric coordinates (sRGB space per 3MF spec)
-- `--no-mesh-colors` forces uniform material color instead
+- `--force-color` ignores embedded mesh colors, uses `--material-color` for all surfaces
 - `--list-colors` prints the color palette and exits
 
 ### Format Limitations
@@ -238,7 +238,7 @@ fn run() -> Result<(), RenderError> {
 
 Responsibilities:
 - Define CLI args with clap derive
-- Validate mutual exclusivity (--view vs --azimuth/--elevation, --view vs --views)
+- Validate mutual exclusivity (--view vs --azimuth/--elevation)
 - Build `BatchConfig` from validated args (handles single and batch modes)
 - Expand recursive directory inputs
 - Parse material color presets and hex values
@@ -277,7 +277,7 @@ pub enum ViewConfig {
 
 Batch mode is detected when:
 - Multiple input files provided
-- `--views` flag used with multiple views
+- `--view` flag with comma-separated multiple views
 - `--recursive` flag with directory input
 
 ### stl/mod.rs

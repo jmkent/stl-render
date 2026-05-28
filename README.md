@@ -79,7 +79,7 @@ Format is auto-detected from file content, not extension.
 stl-render model.3mf -o preview.png
 
 # Ignore mesh colors, use uniform material color
-stl-render model.3mf -o preview.png --no-mesh-colors --material-color tan
+stl-render model.3mf -o preview.png --force-color --material-color tan
 
 # List colors in a 3MF file
 stl-render model.3mf --list-colors
@@ -181,25 +181,24 @@ Options:
   -o, --output <PATH>           Output PNG path or directory (use trailing / for directory)
       --width <PX>              Image width [default: 512]
       --height <PX>             Image height [default: 512]
-      --view <PRESET>           Single view preset
-      --views <LIST>            Multiple views (comma-separated), outputs to directory
+      --view <PRESET>           Camera view(s): preset name or comma-separated list
   -r, --recursive               Recursively render supported mesh files from input directories
       --azimuth <DEG>           Camera azimuth angle (conflicts with --view)
       --elevation <DEG>         Camera elevation angle (conflicts with --view)
       --padding <RATIO>         Padding around model [default: 0.08]
-      --aa <LEVEL>              Anti-aliasing: none|2x|4x [default: 2x]
+      --aa <LEVEL>              Anti-aliasing: none (1x), 2x, 4x [default: 2x]
       --background <TYPE>       Background: transparent|solid [default: transparent]
-      --background-color <HEX>  Background color for solid [default: #ffffff]
+      --background-color <HEX>  Background color when --background=solid [default: #ffffff]
       --material-color <COLOR>  Model color: hex or preset [default: #cccccc]
-      --no-mesh-colors          Ignore embedded mesh colors (3MF), use --material-color
-      --list-colors             List colors in file and exit (3MF only)
+      --force-color             Ignore embedded mesh colors, use --material-color for all surfaces
+      --list-colors             List embedded color palette and exit (3MF only)
       --lighting <PRESET>       Lighting: flat|studio|technical [default: studio]
       --animate                 Enable animated GIF output (rotating view)
-      --frames <N>              Number of animation frames [default: 16]
-      --frame-delay <MS>        Milliseconds between frames [default: 100]
+      --frames <N>              Number of animation frames (requires --animate) [default: 16]
+      --frame-delay <MS>        Frame delay in ms (requires --animate) [default: 100]
       --dimensions              Show dimension overlay (X/Y/Z extents)
-      --units <mm|in>           Dimension units [default: mm]
-      --dimension-color <HEX>   Dimension line/text color (default: auto-contrast)
+      --units <mm|in>           Dimension units (requires --dimensions) [default: mm]
+      --dimension-color <HEX>   Dimension line/text color (requires --dimensions; default: auto-contrast)
       --metadata <PATH>         Write render metadata JSON
       --strict                  Abort on first error (default: continue processing)
       --quiet                   Suppress progress output

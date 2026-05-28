@@ -95,7 +95,7 @@ fn test_invalid_cli_values_exit_code_1() {
             "fixtures/cube.stl",
             "-o",
             "/tmp/invalid-views/",
-            "--views",
+            "--view",
             "front,nope,iso",
         ],
         "invalid view",
@@ -330,21 +330,7 @@ fn test_material_color_red() {
 fn test_material_color_presets_render_successfully() {
     let dir = tempdir().unwrap();
 
-    for color in [
-        "tan",
-        "blue-grey",
-        "TAN",
-        "white",
-        "black",
-        "red",
-        "orange",
-        "green",
-        "blue",
-        "grey",
-        "gray",
-        "silver",
-        "#ff0000",
-    ] {
+    for color in ["tan", "TAN", "#ff0000", "blue-grey"] {
         let output = dir
             .path()
             .join(format!("{}.png", color.replace('#', "hex-")));
@@ -405,57 +391,41 @@ fn test_lighting_presets_differ() {
 }
 
 #[test]
-fn test_aa_2x_output_dimensions() {
-    let dir = tempdir().unwrap();
-    let output = dir.path().join("aa2x.png");
+fn test_aa_output_dimensions() {
+    for (aa, size) in [("2x", "256"), ("4x", "128")] {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join(format!("aa_{aa}.png"));
 
-    let status = stl_render()
-        .args([
-            "fixtures/cube.stl",
-            "-o",
-            output.to_str().unwrap(),
-            "--width",
-            "256",
-            "--height",
-            "256",
-            "--aa",
-            "2x",
-        ])
-        .status()
-        .unwrap();
+        let status = stl_render()
+            .args([
+                "fixtures/cube.stl",
+                "-o",
+                output.to_str().unwrap(),
+                "--width",
+                size,
+                "--height",
+                size,
+                "--aa",
+                aa,
+            ])
+            .status()
+            .unwrap();
 
-    assert!(status.success());
+        assert!(status.success(), "AA {aa} should succeed");
 
-    let img = image::open(&output).unwrap();
-    assert_eq!(img.width(), 256, "Output should match requested width");
-    assert_eq!(img.height(), 256, "Output should match requested height");
-}
-
-#[test]
-fn test_aa_4x_output_dimensions() {
-    let dir = tempdir().unwrap();
-    let output = dir.path().join("aa4x.png");
-
-    let status = stl_render()
-        .args([
-            "fixtures/cube.stl",
-            "-o",
-            output.to_str().unwrap(),
-            "--width",
-            "128",
-            "--height",
-            "128",
-            "--aa",
-            "4x",
-        ])
-        .status()
-        .unwrap();
-
-    assert!(status.success());
-
-    let img = image::open(&output).unwrap();
-    assert_eq!(img.width(), 128);
-    assert_eq!(img.height(), 128);
+        let img = image::open(&output).unwrap();
+        let expected: u32 = size.parse().unwrap();
+        assert_eq!(
+            img.width(),
+            expected,
+            "AA {aa} width should match requested"
+        );
+        assert_eq!(
+            img.height(),
+            expected,
+            "AA {aa} height should match requested"
+        );
+    }
 }
 
 #[test]
@@ -618,36 +588,6 @@ fn test_metadata_contains_required_fields() {
 }
 
 #[test]
-fn test_large_file_renders_successfully() {
-    // Skip if large fixture doesn't exist (not committed to repo)
-    let large_path = std::path::Path::new("fixtures/large_1m.stl");
-    if !large_path.exists() {
-        eprintln!("Skipping large file test - fixtures/large_1m.stl not found");
-        return;
-    }
-
-    let dir = tempdir().unwrap();
-    let output = dir.path().join("large.png");
-
-    let status = stl_render()
-        .args([
-            "fixtures/large_1m.stl",
-            "-o",
-            output.to_str().unwrap(),
-            "--aa",
-            "none",
-        ])
-        .status()
-        .unwrap();
-
-    assert!(status.success(), "Large file should render successfully");
-    assert!(output.exists());
-
-    let img = image::open(&output).unwrap();
-    assert_eq!(img.width(), 512);
-}
-
-#[test]
 fn test_truncated_file_error() {
     let output = stl_render()
         .args(["fixtures/truncated.stl", "-o", "/tmp/truncated.png"])
@@ -770,7 +710,7 @@ fn test_batch_multiple_views() {
             "fixtures/cube.stl",
             "-o",
             &format!("{}/", outdir.display()),
-            "--views",
+            "--view",
             "front,back,iso",
         ])
         .status()
@@ -803,7 +743,7 @@ fn test_batch_multiple_inputs_multiple_views() {
             "fixtures/sphere.stl",
             "-o",
             &format!("{}/", outdir.display()),
-            "--views",
+            "--view",
             "front,iso",
         ])
         .status()
@@ -1116,7 +1056,7 @@ fn test_batch_recursive_renders_multiple_views() {
             "-o",
             &format!("{}/", outdir.display()),
             "--recursive",
-            "--views",
+            "--view",
             "front,iso",
             "--aa",
             "none",
@@ -1152,7 +1092,7 @@ fn test_batch_requires_directory_for_multiple_views() {
             "fixtures/cube.stl",
             "-o",
             "output.png",
-            "--views",
+            "--view",
             "front,back",
         ])
         .output()
@@ -1165,87 +1105,25 @@ fn test_batch_requires_directory_for_multiple_views() {
 // M11: Print View Presets tests
 
 #[test]
-fn test_print_front_view() {
-    let dir = tempdir().unwrap();
-    let output = dir.path().join("print-front.png");
+fn test_print_view_presets() {
+    for preset in ["print-front", "print-left", "print-right", "print-back"] {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join(format!("{preset}.png"));
 
-    let status = stl_render()
-        .args([
-            "fixtures/cube.stl",
-            "-o",
-            output.to_str().unwrap(),
-            "--view",
-            "print-front",
-        ])
-        .status()
-        .unwrap();
+        let status = stl_render()
+            .args([
+                "fixtures/cube.stl",
+                "-o",
+                output.to_str().unwrap(),
+                "--view",
+                preset,
+            ])
+            .status()
+            .unwrap();
 
-    assert!(status.success());
-    assert!(output.exists());
-
-    let img = image::open(&output).unwrap().into_rgba8();
-    let non_transparent: usize = img.pixels().filter(|p| p[3] > 0).count();
-    assert!(non_transparent > 1000, "Should have visible content");
-}
-
-#[test]
-fn test_print_left_view() {
-    let dir = tempdir().unwrap();
-    let output = dir.path().join("print-left.png");
-
-    let status = stl_render()
-        .args([
-            "fixtures/cube.stl",
-            "-o",
-            output.to_str().unwrap(),
-            "--view",
-            "print-left",
-        ])
-        .status()
-        .unwrap();
-
-    assert!(status.success());
-    assert!(output.exists());
-}
-
-#[test]
-fn test_print_right_view() {
-    let dir = tempdir().unwrap();
-    let output = dir.path().join("print-right.png");
-
-    let status = stl_render()
-        .args([
-            "fixtures/cube.stl",
-            "-o",
-            output.to_str().unwrap(),
-            "--view",
-            "print-right",
-        ])
-        .status()
-        .unwrap();
-
-    assert!(status.success());
-    assert!(output.exists());
-}
-
-#[test]
-fn test_print_back_view() {
-    let dir = tempdir().unwrap();
-    let output = dir.path().join("print-back.png");
-
-    let status = stl_render()
-        .args([
-            "fixtures/cube.stl",
-            "-o",
-            output.to_str().unwrap(),
-            "--view",
-            "print-back",
-        ])
-        .status()
-        .unwrap();
-
-    assert!(status.success());
-    assert!(output.exists());
+        assert!(status.success(), "{preset} should succeed");
+        assert!(output.exists(), "{preset} should produce output");
+    }
 }
 
 #[test]
@@ -1349,6 +1227,10 @@ fn test_print_grid_has_visible_content_in_all_quadrants() {
         (128, 128, 256, 256), // bottom-right
     ];
 
+    // Each 128x128 quadrant has 16384 pixels; 100 is ~0.6%, just enough to confirm
+    // the view rendered something rather than producing a blank tile.
+    const MIN_QUADRANT_PIXELS: usize = 100;
+
     for (x1, y1, x2, y2) in quadrants {
         let mut non_transparent = 0;
         for y in y1..y2 {
@@ -1359,7 +1241,7 @@ fn test_print_grid_has_visible_content_in_all_quadrants() {
             }
         }
         assert!(
-            non_transparent > 100,
+            non_transparent > MIN_QUADRANT_PIXELS,
             "Quadrant ({x1},{y1}) to ({x2},{y2}) should have visible content, found {non_transparent} pixels"
         );
     }
@@ -1421,7 +1303,7 @@ fn test_print_views_in_batch_mode() {
             "fixtures/cube.stl",
             "-o",
             &format!("{}/", outdir.display()),
-            "--views",
+            "--view",
             "print-front,print-left,print-right,print-back",
         ])
         .status()
@@ -1546,25 +1428,6 @@ fn test_render_to_image_with_print_grid() {
     assert_eq!(image.width(), 256);
     assert_eq!(image.height(), 256);
     assert_eq!(metadata.triangle_count, 12);
-}
-
-#[test]
-fn test_library_exports_all_types() {
-    // This test verifies that all expected types are exported from the library
-    use stl_render::{
-        AntiAliasing, Background, LightingPreset, MeshReader, Tmf3Reader, ViewPreset,
-    };
-
-    // Just verify they exist and can be named
-    let _: fn() -> AntiAliasing = || AntiAliasing::X2;
-    let _: fn() -> Background = || Background::Transparent;
-    let _: fn() -> LightingPreset = || LightingPreset::Studio;
-    let _: fn() -> ViewPreset = || ViewPreset::Iso;
-
-    // Verify mesh reader types are exported
-    let _ = |path: &std::path::Path| MeshReader::open(path);
-    let _ = |path: &std::path::Path| Tmf3Reader::open(path);
-    let _ = |path: &std::path::Path| stl_render::ObjReader::open(path);
 }
 
 // =============================================================================

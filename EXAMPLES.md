@@ -66,7 +66,7 @@ stl-render colored_model.3mf -o preview.png
 stl-render colored_model.3mf -o preview.gif --animate --frames 24
 
 # Ignore mesh colors, use uniform material color
-stl-render colored_model.3mf -o preview.png --no-mesh-colors --material-color tan
+stl-render colored_model.3mf -o preview.png --force-color --material-color tan
 
 # List colors in a 3MF file
 stl-render model.3mf -o /dev/null --list-colors
@@ -385,7 +385,7 @@ Render every supported mesh file under a directory tree:
 
 ```bash
 stl-render models/ -o output/ --recursive
-stl-render models/ -o output/ --recursive --views front,iso,print
+stl-render models/ -o output/ --recursive --view front,iso,print
 ```
 
 Directory inputs include `.stl`, `.obj`, and `.3mf` files case-insensitively. Nested input paths are preserved under the output directory:
@@ -393,7 +393,7 @@ Directory inputs include `.stl`, `.obj`, and `.3mf` files case-insensitively. Ne
 ```text
 models/cube.stl -> output/cube.png
 models/parts/bracket.stl -> output/parts/bracket.png
-models/parts/bracket.stl --views front,iso -> output/parts/bracket.front.png, output/parts/bracket.iso.png
+models/parts/bracket.stl --view front,iso -> output/parts/bracket.front.png, output/parts/bracket.iso.png
 ```
 
 If multiple source formats would otherwise write the same target, the source extension is kept in the output name:
@@ -410,7 +410,7 @@ Generate multiple views of a single model:
 
 ```bash
 # Render front, back, and iso views
-stl-render model.stl -o output/ --views front,back,iso
+stl-render model.stl -o output/ --view front,back,iso
 
 # Output naming: model.front.png, model.back.png, model.iso.png
 ```
@@ -421,7 +421,7 @@ Combine both for comprehensive documentation:
 
 ```bash
 # Render all print angles for multiple models
-stl-render *.stl -o output/ --views print-front,print-left,print-right,print-back
+stl-render *.stl -o output/ --view print-front,print-left,print-right,print-back
 
 # Output: model1.print-front.png, model1.print-left.png, ...
 ```
@@ -481,7 +481,7 @@ stl-render model.stl -o grid.png \
 
 # Batch render all angles for documentation
 stl-render model.stl -o docs/ \
-    --views front,back,left,right,top,print \
+    --view front,back,left,right,top,print \
     --material-color blue-grey \
     --aa 2x
 ```

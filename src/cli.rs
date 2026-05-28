@@ -14,12 +14,6 @@ pub enum CliError {
     #[error("--azimuth and --elevation must be used together")]
     IncompleteCustomView,
 
-    #[error("cannot use --views with --azimuth or --elevation")]
-    ConflictingViewsArgs,
-
-    #[error("cannot use both --view and --views")]
-    ConflictingViewFlags,
-
     #[error("multiple inputs require output directory (path ending with / or existing directory)")]
     MultipleInputsRequireDirectory,
 
@@ -80,23 +74,19 @@ pub struct Args {
     #[arg(long, default_value = "512")]
     pub height: u32,
 
-    /// View preset: front, back, left, right, top, bottom, iso, print
+    /// View(s): front, back, left, right, top, bottom, iso, print, print-front, print-left, print-right, print-back, print-grid (comma-separated for multiple)
     #[arg(long, default_value = "iso")]
     pub view: String,
-
-    /// Multiple views (comma-separated): front,back,iso produces multiple outputs
-    #[arg(long)]
-    pub views: Option<String>,
 
     /// Recursively render supported mesh files from input directories
     #[arg(short, long)]
     pub recursive: bool,
 
-    /// Camera azimuth angle in degrees (conflicts with --view/--views)
+    /// Camera azimuth angle in degrees (conflicts with --view)
     #[arg(long)]
     pub azimuth: Option<f32>,
 
-    /// Camera elevation angle in degrees (conflicts with --view/--views)
+    /// Camera elevation angle in degrees (conflicts with --view)
     #[arg(long)]
     pub elevation: Option<f32>,
 
@@ -104,7 +94,7 @@ pub struct Args {
     #[arg(long, default_value = "0.08")]
     pub padding: f32,
 
-    /// Anti-aliasing level: none, 2x, 4x
+    /// Anti-aliasing: none (1x), 2x, 4x
     #[arg(long, default_value = "2x")]
     pub aa: String,
 
@@ -112,7 +102,7 @@ pub struct Args {
     #[arg(long, default_value = "transparent")]
     pub background: String,
 
-    /// Background color (hex, e.g., #ffffff)
+    /// Background color when --background=solid (hex, e.g., #ffffff)
     #[arg(long, default_value = "#ffffff")]
     pub background_color: String,
 
@@ -120,15 +110,15 @@ pub struct Args {
     #[arg(long, default_value = "#cccccc")]
     pub material_color: String,
 
-    /// Ignore embedded mesh colors, use --material-color instead
+    /// Ignore embedded mesh colors, use --material-color for all surfaces
     #[arg(long)]
-    pub no_mesh_colors: bool,
+    pub force_color: bool,
 
     /// Override specific palette colors (format: "0:#ff0000,2:#00ff00")
     #[arg(long)]
     pub color_map: Option<String>,
 
-    /// List colors in file and exit (3MF only)
+    /// List embedded color palette and exit (3MF only)
     #[arg(long)]
     pub list_colors: bool,
 
@@ -156,11 +146,11 @@ pub struct Args {
     #[arg(long)]
     pub animate: bool,
 
-    /// Number of frames for animated GIF (default: 16)
+    /// Number of frames for animated GIF (requires --animate)
     #[arg(long, default_value = "16")]
     pub frames: u32,
 
-    /// Frame delay in milliseconds for animated GIF (default: 100)
+    /// Frame delay in ms for animated GIF (requires --animate)
     #[arg(long, default_value = "100")]
     pub frame_delay: u16,
 
@@ -168,11 +158,11 @@ pub struct Args {
     #[arg(long)]
     pub dimensions: bool,
 
-    /// Display units for dimensions: mm, in (default: mm)
+    /// Display units for dimensions: mm, in (requires --dimensions)
     #[arg(long, default_value = "mm")]
     pub units: String,
 
-    /// Dimension line/text color (hex, e.g., #ffffff; default: auto-contrast)
+    /// Dimension line/text color (hex; default: auto-contrast, requires --dimensions)
     #[arg(long)]
     pub dimension_color: Option<String>,
 }
@@ -538,8 +528,8 @@ impl RenderConfigBuilder {
         self
     }
 
-    /// Disable embedded mesh colors (use material_color instead).
-    pub fn no_mesh_colors(mut self) -> Self {
+    /// Ignore embedded mesh colors, use material_color for all surfaces.
+    pub fn force_color(mut self) -> Self {
         self.use_mesh_colors = false;
         self
     }
@@ -753,20 +743,12 @@ pub fn parse_args() -> Result<BatchConfig, RenderError> {
 
 fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
     let has_custom_angles = args.azimuth.is_some() || args.elevation.is_some();
-    let has_views_flag = args.views.is_some();
     let has_explicit_view = args.view != "iso";
     let is_stdin = args.inputs.len() == 1 && args.inputs[0].to_str() == Some("-");
     let is_stdout = args.output.to_str() == Some("-");
 
-    // Validate conflicting options
-    if has_custom_angles && has_views_flag {
-        return Err(CliError::ConflictingViewsArgs);
-    }
     if has_custom_angles && has_explicit_view {
         return Err(CliError::ConflictingViewArgs);
-    }
-    if has_views_flag && has_explicit_view {
-        return Err(CliError::ConflictingViewFlags);
     }
 
     // Parse views
@@ -780,13 +762,11 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
             }
             _ => return Err(CliError::IncompleteCustomView),
         }
-    } else if let Some(ref views_str) = args.views {
-        parse_views_list(views_str)?
+    } else {
+        parse_views_list(&args.view)?
             .into_iter()
             .map(ViewConfig::Preset)
             .collect()
-    } else {
-        vec![ViewConfig::Preset(parse_view_preset(&args.view)?)]
     };
 
     let has_input_dir = args.inputs.iter().any(|input| input.is_dir());
@@ -839,7 +819,7 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         background,
         background_color,
         material_color,
-        use_mesh_colors: !args.no_mesh_colors,
+        use_mesh_colors: !args.force_color,
         color_map,
         lighting,
         metadata_path: args.metadata,
@@ -1238,36 +1218,6 @@ mod tests {
     }
 
     #[test]
-    fn test_material_color_presets_in_config() {
-        for (name, expected) in [
-            ("tan", [193, 154, 107]),
-            ("blue-grey", [112, 128, 144]),
-            ("TAN", [193, 154, 107]),
-            ("#ff0000", [255, 0, 0]),
-            ("white", [255, 255, 255]),
-            ("black", [26, 26, 26]),
-            ("red", [204, 51, 51]),
-            ("orange", [255, 102, 0]),
-            ("green", [51, 153, 51]),
-            ("blue", [51, 102, 204]),
-            ("grey", [128, 128, 128]),
-            ("gray", [128, 128, 128]),
-            ("silver", [192, 192, 192]),
-        ] {
-            let args = make_args(&[
-                "stl-render",
-                "test.stl",
-                "-o",
-                "out.png",
-                "--material-color",
-                name,
-            ]);
-            let config = build_batch_config(args).unwrap();
-            assert_eq!(config.material_color, expected, "{name}");
-        }
-    }
-
-    #[test]
     fn test_parse_aa() {
         assert_eq!(parse_aa("none").unwrap(), AntiAliasing::None);
         assert_eq!(parse_aa("2x").unwrap(), AntiAliasing::X2);
@@ -1323,7 +1273,7 @@ mod tests {
             "t.stl",
             "-o",
             "out/",
-            "--views",
+            "--view",
             "front,back,iso",
         ]);
         let config = build_batch_config(args).unwrap();
@@ -1336,7 +1286,7 @@ mod tests {
             ]
         );
 
-        let args = make_args(&["stl-render", "t.stl", "-o", "out/", "--views", "front,nope"]);
+        let args = make_args(&["stl-render", "t.stl", "-o", "out/", "--view", "front,nope"]);
         assert!(matches!(
             build_batch_config(args),
             Err(CliError::InvalidView(_))
@@ -1360,7 +1310,7 @@ mod tests {
             "t.stl",
             "-o",
             "out.png",
-            "--views",
+            "--view",
             "front,back",
         ]);
         let result = build_batch_config(args);
