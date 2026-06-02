@@ -1666,6 +1666,554 @@ fn test_3mf_transforms_affect_bounding_box() {
 }
 
 // =============================================================================
+// 3MF Color Tests (M19)
+// =============================================================================
+
+#[test]
+fn test_3mf_colored_cube_palette() {
+    use std::path::Path;
+    use stl_render::Tmf3Reader;
+
+    let reader = Tmf3Reader::open(Path::new("fixtures/colored_cube.3mf")).unwrap();
+    assert!(reader.has_colors(), "colored_cube should report colors");
+    assert_eq!(
+        reader.color_palette().len(),
+        6,
+        "colored_cube has six face colors"
+    );
+}
+
+#[test]
+fn test_3mf_gradient_palette() {
+    use std::path::Path;
+    use stl_render::Tmf3Reader;
+
+    let reader = Tmf3Reader::open(Path::new("fixtures/gradient.3mf")).unwrap();
+    assert!(reader.has_colors());
+    assert_eq!(reader.color_palette().len(), 4);
+}
+
+#[test]
+fn test_3mf_partial_colors_palette() {
+    use std::path::Path;
+    use stl_render::Tmf3Reader;
+
+    let reader = Tmf3Reader::open(Path::new("fixtures/partial_colors.3mf")).unwrap();
+    assert!(
+        reader.has_colors(),
+        "partial_colors has colored faces, so has_colors is true"
+    );
+    assert_eq!(reader.color_palette().len(), 2);
+}
+
+#[test]
+fn test_list_colors_prints_palette() {
+    let output = stl_render()
+        .args([
+            "fixtures/colored_cube.3mf",
+            "-o",
+            "/dev/null",
+            "--list-colors",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("#ff0000"), "should list red: {stdout}");
+    assert!(stdout.contains("#00ffff"), "should list cyan: {stdout}");
+    // One line per palette entry (6 colors).
+    let entries = stdout.lines().filter(|l| l.contains('#')).count();
+    assert_eq!(entries, 6, "should list all six palette colors: {stdout}");
+}
+
+#[test]
+fn test_list_colors_no_colors_for_plain_stl() {
+    let output = stl_render()
+        .args(["fixtures/cube.stl", "-o", "/dev/null", "--list-colors"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("no colors"),
+        "plain STL has no palette: {stdout}"
+    );
+}
+
+/// Average color of all visible (non-transparent) pixels in an image.
+fn average_visible_color(img: &image::RgbaImage) -> [u32; 3] {
+    let visible: Vec<_> = img.pixels().filter(|p| p[3] > 0).collect();
+    assert!(!visible.is_empty(), "image should have visible pixels");
+    let n = visible.len() as u32;
+    [
+        visible.iter().map(|p| p[0] as u32).sum::<u32>() / n,
+        visible.iter().map(|p| p[1] as u32).sum::<u32>() / n,
+        visible.iter().map(|p| p[2] as u32).sum::<u32>() / n,
+    ]
+}
+
+#[test]
+fn test_colored_cube_renders_embedded_colors() {
+    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
+
+    // With embedded colors (the default), the cube's faces are highly
+    // saturated. Render an iso view and verify strongly saturated (non-grey)
+    // pixels are present, which the default grey material would not produce.
+    let config = RenderConfigBuilder::new("fixtures/colored_cube.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+    let (image, _) = render_to_image(&config).unwrap();
+
+    // Embedded colors are highly saturated; the default grey material is not.
+    // Verify at least some pixel has a dominant channel far above the others.
+    let saturated = image.pixels().any(|p| {
+        p[3] > 0 && {
+            let max = p[0].max(p[1]).max(p[2]) as i32;
+            let min = p[0].min(p[1]).min(p[2]) as i32;
+            max - min > 100
+        }
+    });
+    assert!(
+        saturated,
+        "colored cube should render saturated embedded colors"
+    );
+}
+
+#[test]
+fn test_force_color_ignores_embedded_colors() {
+    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
+
+    // With force_color and a neutral grey material, no pixel should be
+    // strongly saturated (the embedded reds/greens/blues are suppressed).
+    let config = RenderConfigBuilder::new("fixtures/colored_cube.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .material_color([136, 136, 136])
+        .force_color()
+        .build();
+    let (image, _) = render_to_image(&config).unwrap();
+
+    let saturated = image.pixels().any(|p| {
+        p[3] > 0 && {
+            let max = p[0].max(p[1]).max(p[2]) as i32;
+            let min = p[0].min(p[1]).min(p[2]) as i32;
+            max - min > 60
+        }
+    });
+    assert!(
+        !saturated,
+        "force-color with grey material should produce no saturated colors"
+    );
+}
+
+#[test]
+fn test_color_map_overrides_palette_color() {
+    use stl_render::{ColorMap, RenderConfigBuilder, ViewPreset, render_to_image};
+
+    // Baseline render with embedded colors.
+    let base_config = RenderConfigBuilder::new("fixtures/colored_cube.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+    let (base_image, _) = render_to_image(&base_config).unwrap();
+    let base_avg = average_visible_color(&base_image);
+
+    // Remap every palette index to grey; result should desaturate noticeably.
+    let mut map = ColorMap::new();
+    for idx in 0..6u32 {
+        map.insert(idx, [136, 136, 136, 255]);
+    }
+    let mapped_config = RenderConfigBuilder::new("fixtures/colored_cube.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .color_map(map)
+        .build();
+    let (mapped_image, _) = render_to_image(&mapped_config).unwrap();
+    let mapped_avg = average_visible_color(&mapped_image);
+
+    assert_ne!(
+        base_avg, mapped_avg,
+        "color-map override should change the rendered output"
+    );
+
+    // The remapped render should be roughly grey (channels close together).
+    let spread = (mapped_avg[0] as i32 - mapped_avg[2] as i32).abs();
+    assert!(
+        spread < 30,
+        "remapped-to-grey render should be near-neutral: avg={mapped_avg:?}"
+    );
+}
+
+#[test]
+fn test_color_map_out_of_range_index_ignored() {
+    use stl_render::{ColorMap, RenderConfigBuilder, ViewPreset, render_to_image};
+
+    let base_config = RenderConfigBuilder::new("fixtures/colored_cube.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+    let (base_image, _) = render_to_image(&base_config).unwrap();
+    let base_avg = average_visible_color(&base_image);
+
+    // Index 99 does not exist in a 6-color palette; it must be ignored.
+    let mut map = ColorMap::new();
+    map.insert(99, [0, 0, 0, 255]);
+    let config = RenderConfigBuilder::new("fixtures/colored_cube.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .color_map(map)
+        .build();
+    let (image, _) = render_to_image(&config).unwrap();
+
+    assert_eq!(
+        base_avg,
+        average_visible_color(&image),
+        "out-of-range color-map index should not change output"
+    );
+}
+
+#[test]
+fn test_gradient_renders_multiple_hues() {
+    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
+
+    // The gradient quad has red, green, blue, and white corners. An iso view
+    // looks at the colored face and should contain pixels dominated by each of
+    // red, green, and blue (the quad's front face is culled from the top view).
+    let config = RenderConfigBuilder::new("fixtures/gradient.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .build();
+    let (image, _) = render_to_image(&config).unwrap();
+
+    let red = image
+        .pixels()
+        .any(|p| p[3] > 0 && p[0] as i32 - p[1] as i32 > 60 && p[0] as i32 - p[2] as i32 > 60);
+    let green = image
+        .pixels()
+        .any(|p| p[3] > 0 && p[1] as i32 - p[0] as i32 > 60 && p[1] as i32 - p[2] as i32 > 60);
+    let blue = image
+        .pixels()
+        .any(|p| p[3] > 0 && p[2] as i32 - p[0] as i32 > 60 && p[2] as i32 - p[1] as i32 > 60);
+
+    assert!(red, "gradient should have a red-dominant region");
+    assert!(green, "gradient should have a green-dominant region");
+    assert!(blue, "gradient should have a blue-dominant region");
+}
+
+#[test]
+fn test_partial_colors_mixes_colored_and_material() {
+    use stl_render::{RenderConfigBuilder, ViewPreset, render_to_image};
+
+    // partial_colors has a red bottom and green top face plus uncolored side
+    // faces that fall back to the material color. From the iso view the green
+    // top and the (blue) material side faces are visible (the red bottom face
+    // is back-facing). Use a distinctive blue material so the uncolored faces
+    // are clearly separable from the embedded green.
+    let config = RenderConfigBuilder::new("fixtures/partial_colors.3mf", "-")
+        .view(ViewPreset::Iso)
+        .size(128)
+        .material_color([40, 40, 200])
+        .build();
+    let (image, _) = render_to_image(&config).unwrap();
+
+    let green = image
+        .pixels()
+        .any(|p| p[3] > 0 && p[1] as i32 - p[0] as i32 > 60 && p[1] as i32 - p[2] as i32 > 60);
+    let blue_material = image
+        .pixels()
+        .any(|p| p[3] > 0 && p[2] as i32 - p[0] as i32 > 60 && p[2] as i32 - p[1] as i32 > 60);
+
+    assert!(green, "embedded green face should be present");
+    assert!(
+        blue_material,
+        "uncolored faces should use the blue material color"
+    );
+}
+
+// =============================================================================
+// Watermark Tests (M18)
+// =============================================================================
+
+/// Write a solid-color RGBA watermark PNG to `path` and return it.
+fn make_watermark(path: &std::path::Path, w: u32, h: u32, color: [u8; 4]) {
+    let img = image::RgbaImage::from_pixel(w, h, image::Rgba(color));
+    img.save(path).unwrap();
+}
+
+/// Count pixels in a rectangular region that are strongly magenta.
+fn count_magenta(img: &image::RgbaImage, x0: u32, y0: u32, x1: u32, y1: u32) -> usize {
+    let mut n = 0;
+    for y in y0..y1.min(img.height()) {
+        for x in x0..x1.min(img.width()) {
+            let p = img.get_pixel(x, y);
+            if p[0] > 150 && p[2] > 150 && p[1] < 120 {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+#[test]
+fn test_watermark_appears_at_bottom_right() {
+    use stl_render::{RenderConfigBuilder, render_to_image};
+
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+
+    let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+        .size(200)
+        .watermark(&wm)
+        .build();
+    let (image, _) = render_to_image(&config).unwrap();
+
+    let (w, h) = (image.width(), image.height());
+    let in_br = count_magenta(&image, w / 2, h / 2, w, h);
+    let in_tl = count_magenta(&image, 0, 0, w / 2, h / 2);
+
+    assert!(in_br > 0, "watermark should appear in the bottom-right");
+    assert_eq!(in_tl, 0, "default position must not touch the top-left");
+}
+
+#[test]
+fn test_watermark_position_top_left() {
+    use stl_render::{
+        RenderConfigBuilder,
+        overlay::{WatermarkConfig, WatermarkPosition},
+        render_to_image,
+    };
+
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+
+    let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+        .size(200)
+        .watermark_config(WatermarkConfig {
+            path: Some(wm.clone()),
+            position: WatermarkPosition::TopLeft,
+            opacity: 100,
+            scale: 15,
+            margin: 10,
+        })
+        .build();
+    let (image, _) = render_to_image(&config).unwrap();
+
+    let (w, h) = (image.width(), image.height());
+    let in_tl = count_magenta(&image, 0, 0, w / 2, h / 2);
+    let in_br = count_magenta(&image, w / 2, h / 2, w, h);
+
+    assert!(in_tl > 0, "watermark should appear in the top-left");
+    assert_eq!(
+        in_br, 0,
+        "top-left position must not touch the bottom-right"
+    );
+}
+
+#[test]
+fn test_watermark_opacity_blends_toward_background() {
+    use stl_render::{
+        RenderConfigBuilder,
+        overlay::{WatermarkConfig, WatermarkPosition},
+        render_to_image,
+    };
+
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+
+    // Place an opaque magenta watermark flush in the top-left corner over a
+    // solid black background. The watermark fully covers a 60x60 block there,
+    // so the average red is governed purely by opacity: ~255 at full, ~127 at
+    // half. Sample a 40x40 patch well inside that block.
+    let avg_red = |opacity: u8| {
+        let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+            .size(200)
+            .solid_background([0, 0, 0])
+            .watermark_config(WatermarkConfig {
+                path: Some(wm.clone()),
+                position: WatermarkPosition::TopLeft,
+                opacity,
+                scale: 30,
+                margin: 0,
+            })
+            .build();
+        let (image, _) = render_to_image(&config).unwrap();
+        let mut sum = 0u32;
+        for y in 0..40 {
+            for x in 0..40 {
+                sum += image.get_pixel(x, y)[0] as u32;
+            }
+        }
+        sum / (40 * 40)
+    };
+
+    let full = avg_red(100);
+    let half = avg_red(50);
+    assert!(
+        full > 200,
+        "full opacity should be near-full red, got {full}"
+    );
+    assert!(
+        full > half + 60,
+        "half opacity should be markedly less red: full={full}, half={half}"
+    );
+}
+
+#[test]
+fn test_watermark_scale_changes_size() {
+    use stl_render::{
+        RenderConfigBuilder,
+        overlay::{WatermarkConfig, WatermarkPosition},
+        render_to_image,
+    };
+
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+
+    let coverage = |scale: u32| {
+        let config = RenderConfigBuilder::new("fixtures/cube.stl", "-")
+            .size(200)
+            .watermark_config(WatermarkConfig {
+                path: Some(wm.clone()),
+                position: WatermarkPosition::TopLeft,
+                opacity: 100,
+                scale,
+                margin: 0,
+            })
+            .build();
+        let (image, _) = render_to_image(&config).unwrap();
+        count_magenta(&image, 0, 0, image.width(), image.height())
+    };
+
+    assert!(
+        coverage(40) > coverage(10),
+        "a larger scale should produce a larger watermark"
+    );
+}
+
+#[test]
+fn test_watermark_works_with_animation() {
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+    let output = dir.path().join("anim.gif");
+
+    let status = stl_render()
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .args(["--animate", "--frames", "4", "--watermark"])
+        .arg(&wm)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+    assert!(output.exists());
+    // GIF magic header.
+    let bytes = std::fs::read(&output).unwrap();
+    assert!(bytes.starts_with(b"GIF89a") || bytes.starts_with(b"GIF87a"));
+}
+
+#[test]
+fn test_watermark_works_in_batch_mode() {
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+    let outdir = dir.path().join("out");
+    std::fs::create_dir(&outdir).unwrap();
+
+    let status = stl_render()
+        .args(["fixtures/cube.stl", "fixtures/sphere.stl", "-o"])
+        .arg(format!("{}/", outdir.display()))
+        .args(["--width", "120", "--height", "120", "--watermark"])
+        .arg(&wm)
+        .status()
+        .unwrap();
+
+    assert!(status.success());
+
+    for name in ["cube.png", "sphere.png"] {
+        let path = outdir.join(name);
+        assert!(path.exists(), "{name} should be rendered");
+        let img = image::open(&path).unwrap().into_rgba8();
+        let (w, h) = (img.width(), img.height());
+        assert!(
+            count_magenta(&img, w / 2, h / 2, w, h) > 0,
+            "{name} should carry the watermark"
+        );
+    }
+}
+
+#[test]
+fn test_watermark_missing_file_errors() {
+    let dir = tempdir().unwrap();
+    let output = dir.path().join("out.png");
+
+    let result = stl_render()
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .args(["--watermark", "/tmp/stl-render-no-such-watermark.png"])
+        .output()
+        .unwrap();
+
+    assert!(
+        !result.status.success(),
+        "missing watermark file should fail"
+    );
+}
+
+#[test]
+fn test_watermark_invalid_position_errors() {
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+    let output = dir.path().join("out.png");
+
+    let result = stl_render()
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .arg("--watermark")
+        .arg(&wm)
+        .args(["--watermark-position", "middle"])
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "invalid watermark position is a usage error"
+    );
+}
+
+#[test]
+fn test_watermark_invalid_opacity_errors() {
+    let dir = tempdir().unwrap();
+    let wm = dir.path().join("wm.png");
+    make_watermark(&wm, 32, 32, [255, 0, 255, 255]);
+    let output = dir.path().join("out.png");
+
+    let result = stl_render()
+        .args(["fixtures/cube.stl", "-o"])
+        .arg(&output)
+        .arg("--watermark")
+        .arg(&wm)
+        .args(["--watermark-opacity", "150"])
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        result.status.code(),
+        Some(1),
+        "opacity above 100 is a usage error"
+    );
+}
+
+// =============================================================================
 // OBJ Format Tests
 // =============================================================================
 

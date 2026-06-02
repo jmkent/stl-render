@@ -38,6 +38,17 @@ pub enum CliError {
     #[error("invalid dimension units '{0}' (expected mm or in)")]
     InvalidUnits(String),
 
+    #[error(
+        "invalid watermark position '{0}' (expected top-left, top-right, bottom-left, bottom-right, or center)"
+    )]
+    InvalidWatermarkPosition(String),
+
+    #[error("invalid watermark opacity {0} (expected 0-100)")]
+    InvalidWatermarkOpacity(u8),
+
+    #[error("invalid watermark scale {0} (expected greater than 0)")]
+    InvalidWatermarkScale(u32),
+
     #[error("invalid lighting preset '{0}' (expected flat, studio, or technical)")]
     InvalidLighting(String),
 
@@ -165,6 +176,26 @@ pub struct Args {
     /// Dimension line/text color (hex; default: auto-contrast, requires --dimensions)
     #[arg(long)]
     pub dimension_color: Option<String>,
+
+    /// Watermark image to composite onto output (PNG with alpha)
+    #[arg(long)]
+    pub watermark: Option<PathBuf>,
+
+    /// Watermark placement: top-left, top-right, bottom-left, bottom-right, center
+    #[arg(long, default_value = "bottom-right")]
+    pub watermark_position: String,
+
+    /// Watermark opacity percentage 0-100 (requires --watermark)
+    #[arg(long, default_value = "100")]
+    pub watermark_opacity: u8,
+
+    /// Watermark width as percent of output width (requires --watermark)
+    #[arg(long, default_value = "15")]
+    pub watermark_scale: u32,
+
+    /// Watermark margin from edges in pixels (requires --watermark)
+    #[arg(long, default_value = "10")]
+    pub watermark_margin: u32,
 }
 
 /// Camera view presets for common viewing angles.
@@ -289,6 +320,8 @@ pub struct RenderConfig {
     pub material_color: [u8; 3],
     /// Use embedded mesh colors when present (3MF colorgroups)
     pub use_mesh_colors: bool,
+    /// Override embedded palette colors by index (3MF colorgroups)
+    pub color_map: ColorMap,
     /// Lighting preset
     pub lighting: LightingPreset,
     /// Optional path to write metadata JSON
@@ -305,6 +338,8 @@ pub struct RenderConfig {
     pub frame_delay: u16,
     /// Dimension overlay configuration
     pub dimension_config: crate::overlay::DimensionConfig,
+    /// Watermark overlay configuration
+    pub watermark_config: crate::overlay::WatermarkConfig,
 }
 
 impl RenderConfig {
@@ -379,6 +414,7 @@ pub struct RenderConfigBuilder {
     background_color: [u8; 3],
     material_color: [u8; 3],
     use_mesh_colors: bool,
+    color_map: ColorMap,
     lighting: LightingPreset,
     metadata_path: Option<PathBuf>,
     quiet: bool,
@@ -387,6 +423,7 @@ pub struct RenderConfigBuilder {
     frames: u32,
     frame_delay: u16,
     dimension_config: crate::overlay::DimensionConfig,
+    watermark_config: crate::overlay::WatermarkConfig,
 }
 
 impl RenderConfigBuilder {
@@ -413,6 +450,7 @@ impl RenderConfigBuilder {
             background_color: [255, 255, 255],
             material_color: [204, 204, 204],
             use_mesh_colors: true,
+            color_map: ColorMap::new(),
             lighting: LightingPreset::Studio,
             metadata_path: None,
             quiet: false,
@@ -421,6 +459,7 @@ impl RenderConfigBuilder {
             frames: 16,
             frame_delay: 100,
             dimension_config: crate::overlay::DimensionConfig::default(),
+            watermark_config: crate::overlay::WatermarkConfig::default(),
         }
     }
 
@@ -534,6 +573,12 @@ impl RenderConfigBuilder {
         self
     }
 
+    /// Override embedded palette colors by index (3MF colorgroups).
+    pub fn color_map(mut self, map: ColorMap) -> Self {
+        self.color_map = map;
+        self
+    }
+
     /// Enable dimension overlay with the specified units.
     pub fn dimensions(mut self, units: crate::overlay::DimensionUnits) -> Self {
         self.dimension_config.enabled = true;
@@ -544,6 +589,19 @@ impl RenderConfigBuilder {
     /// Set dimension overlay color (otherwise auto-contrast).
     pub fn dimension_color(mut self, color: [u8; 3]) -> Self {
         self.dimension_config.color = Some(color);
+        self
+    }
+
+    /// Enable a watermark overlay from the given image path (other watermark
+    /// settings keep their defaults unless overridden via [`Self::watermark_config`]).
+    pub fn watermark(mut self, path: impl Into<PathBuf>) -> Self {
+        self.watermark_config.path = Some(path.into());
+        self
+    }
+
+    /// Set the full watermark configuration.
+    pub fn watermark_config(mut self, config: crate::overlay::WatermarkConfig) -> Self {
+        self.watermark_config = config;
         self
     }
 
@@ -561,6 +619,7 @@ impl RenderConfigBuilder {
             background_color: self.background_color,
             material_color: self.material_color,
             use_mesh_colors: self.use_mesh_colors,
+            color_map: self.color_map,
             lighting: self.lighting,
             metadata_path: self.metadata_path,
             quiet: self.quiet,
@@ -569,6 +628,7 @@ impl RenderConfigBuilder {
             frames: self.frames,
             frame_delay: self.frame_delay,
             dimension_config: self.dimension_config,
+            watermark_config: self.watermark_config,
         }
     }
 }
@@ -606,6 +666,7 @@ pub struct BatchConfig {
     pub frame_delay: u16,
     pub list_colors: bool,
     pub dimension_config: crate::overlay::DimensionConfig,
+    pub watermark_config: crate::overlay::WatermarkConfig,
 }
 
 impl BatchConfig {
@@ -637,6 +698,7 @@ impl BatchConfig {
                     background_color: self.background_color,
                     material_color: self.material_color,
                     use_mesh_colors: self.use_mesh_colors,
+                    color_map: self.color_map.clone(),
                     lighting: self.lighting,
                     metadata_path,
                     quiet: self.quiet,
@@ -645,6 +707,7 @@ impl BatchConfig {
                     frames: self.frames,
                     frame_delay: self.frame_delay,
                     dimension_config: self.dimension_config.clone(),
+                    watermark_config: self.watermark_config.clone(),
                 }
             })
         })
@@ -807,6 +870,8 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
         ColorMap::new()
     };
 
+    let watermark_config = parse_watermark(&args)?;
+
     Ok(BatchConfig {
         inputs,
         output_dir,
@@ -840,6 +905,7 @@ fn build_batch_config(args: Args) -> Result<BatchConfig, CliError> {
                 None
             },
         },
+        watermark_config,
     })
 }
 
@@ -1006,6 +1072,37 @@ fn parse_units(s: &str) -> Result<crate::overlay::DimensionUnits, CliError> {
         "in" | "inches" => Ok(crate::overlay::DimensionUnits::Inches),
         _ => Err(CliError::InvalidUnits(s.to_string())),
     }
+}
+
+fn parse_watermark_position(s: &str) -> Result<crate::overlay::WatermarkPosition, CliError> {
+    use crate::overlay::WatermarkPosition;
+    match s.to_lowercase().as_str() {
+        "top-left" | "topleft" => Ok(WatermarkPosition::TopLeft),
+        "top-right" | "topright" => Ok(WatermarkPosition::TopRight),
+        "bottom-left" | "bottomleft" => Ok(WatermarkPosition::BottomLeft),
+        "bottom-right" | "bottomright" => Ok(WatermarkPosition::BottomRight),
+        "center" | "centre" => Ok(WatermarkPosition::Center),
+        _ => Err(CliError::InvalidWatermarkPosition(s.to_string())),
+    }
+}
+
+fn parse_watermark(args: &Args) -> Result<crate::overlay::WatermarkConfig, CliError> {
+    // Position/opacity/scale are always validated so bad values are reported
+    // even when no watermark is supplied (consistent with other flag parsing).
+    let position = parse_watermark_position(&args.watermark_position)?;
+    if args.watermark_opacity > 100 {
+        return Err(CliError::InvalidWatermarkOpacity(args.watermark_opacity));
+    }
+    if args.watermark_scale == 0 {
+        return Err(CliError::InvalidWatermarkScale(args.watermark_scale));
+    }
+    Ok(crate::overlay::WatermarkConfig {
+        path: args.watermark.clone(),
+        position,
+        opacity: args.watermark_opacity,
+        scale: args.watermark_scale,
+        margin: args.watermark_margin,
+    })
 }
 
 fn parse_hex_color(s: &str) -> Result<[u8; 3], CliError> {
@@ -1454,6 +1551,7 @@ mod tests {
             frame_delay: 100,
             list_colors: false,
             dimension_config: crate::overlay::DimensionConfig::default(),
+            watermark_config: crate::overlay::WatermarkConfig::default(),
         };
 
         let outputs: Vec<_> = config.iter_jobs().map(|job| job.output).collect();

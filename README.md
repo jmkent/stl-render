@@ -81,9 +81,15 @@ stl-render model.3mf -o preview.png
 # Ignore mesh colors, use uniform material color
 stl-render model.3mf -o preview.png --force-color --material-color tan
 
-# List colors in a 3MF file
-stl-render model.3mf --list-colors
+# List the embedded color palette (indices used by --color-map)
+stl-render model.3mf -o preview.png --list-colors
+
+# Override specific palette colors by index (see --list-colors)
+stl-render model.3mf -o preview.png --color-map "0:#ff0000,2:#00ff00"
 ```
+
+`--color-map` indices refer to the palette shown by `--list-colors`. Each
+override replaces that palette color wherever it appears on the model.
 
 ### Format Limitations
 
@@ -156,6 +162,24 @@ stl-render model.stl -o preview.png --material-color "#ffcc00"
 
 Available presets: `tan`, `blue-grey`, `white`, `black`, `red`, `orange`, `green`, `blue`, `grey`/`gray`, `silver`. Preset names are case insensitive.
 
+## Watermark
+
+Composite a logo or watermark (PNG with transparency) onto the output for consistent branding across a model collection:
+
+```bash
+# Default: bottom-right, 15% of output width, full opacity
+stl-render model.stl -o preview.png --watermark logo.png
+
+# Position and size
+stl-render model.stl -o preview.png --watermark logo.png \
+  --watermark-position top-left --watermark-scale 20 --watermark-margin 16
+
+# Semi-transparent
+stl-render model.stl -o preview.png --watermark logo.png --watermark-opacity 50
+```
+
+The watermark is scaled to `--watermark-scale` percent of the output width (preserving aspect ratio), placed with `--watermark-margin` pixels of inset, and alpha-blended with `--watermark-opacity` applied to its alpha. It works with PNG, animated GIF (applied to every frame), the print grid (applied once to the final composite), and batch mode (same watermark on all outputs).
+
 ## More Examples
 
 See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
@@ -191,6 +215,7 @@ Options:
       --background-color <HEX>  Background color when --background=solid [default: #ffffff]
       --material-color <COLOR>  Model color: hex or preset [default: #cccccc]
       --force-color             Ignore embedded mesh colors, use --material-color for all surfaces
+      --color-map <SPEC>        Override palette colors by index (e.g. "0:#ff0000,2:#00ff00")
       --list-colors             List embedded color palette and exit (3MF only)
       --lighting <PRESET>       Lighting: flat|studio|technical [default: studio]
       --animate                 Enable animated GIF output (rotating view)
@@ -199,6 +224,11 @@ Options:
       --dimensions              Show dimension overlay (X/Y/Z extents)
       --units <mm|in>           Dimension units (requires --dimensions) [default: mm]
       --dimension-color <HEX>   Dimension line/text color (requires --dimensions; default: auto-contrast)
+      --watermark <PATH>        Watermark image to composite onto output (PNG with alpha)
+      --watermark-position <P>  top-left|top-right|bottom-left|bottom-right|center [default: bottom-right]
+      --watermark-opacity <0-100>  Watermark opacity percent [default: 100]
+      --watermark-scale <PCT>   Watermark width as percent of output width [default: 15]
+      --watermark-margin <PX>   Watermark margin from edges in pixels [default: 10]
       --metadata <PATH>         Write render metadata JSON
       --strict                  Abort on first error (default: continue processing)
       --quiet                   Suppress progress output
@@ -248,7 +278,7 @@ uv run generate_fixtures.py -o ../../fixtures
 
 ### Regenerate Example Renders
 
-The checked-in example PNGs can be regenerated from fixtures and the local 3DBenchy reference:
+The checked-in example PNGs can be regenerated from fixtures and the local 3DBenchy reference. The 3DBenchy STL is **not** included in the repo; it lives locally at `~/3dprinting/3dbenchy/files/3DBenchy.stl`.
 
 ```bash
 cargo run --release -- ~/3dprinting/3dbenchy/files/3DBenchy.stl \
@@ -257,6 +287,22 @@ cargo run --release -- ~/3dprinting/3dbenchy/files/3DBenchy.stl \
   -o examples/benchy_print_bluegrey.png --view print --material-color blue-grey --aa 4x
 cargo run --release -- fixtures/cube.stl \
   -o examples/cube_iso_bluegrey.png --view iso --material-color blue-grey
+
+# Watermark example (examples/watermark_logo.png is checked in)
+cargo run --release -- ~/3dprinting/3dbenchy/files/3DBenchy.stl \
+  -o examples/benchy_watermark.png --view print --material-color tan --aa 4x \
+  --background solid --background-color "#f4f4f4" \
+  --watermark examples/watermark_logo.png --watermark-position bottom-right \
+  --watermark-scale 18 --watermark-margin 16
+
+# Color-map before/after (colored_cube fixture)
+cargo run --release -- fixtures/colored_cube.3mf \
+  -o examples/colormap_original.png --view iso --aa 4x \
+  --background solid --background-color "#ffffff"
+cargo run --release -- fixtures/colored_cube.3mf \
+  -o examples/colormap_remapped.png --view iso --aa 4x \
+  --background solid --background-color "#ffffff" \
+  --color-map "0:#ffffff,1:#ff8800,2:#8800ff,3:#00aaff,4:#ffdd00,5:#ff0066"
 ```
 
 ### Project Structure

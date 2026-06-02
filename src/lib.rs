@@ -44,8 +44,8 @@ pub mod tmf3;
 
 // Re-export public types for library consumers
 pub use cli::{
-    AntiAliasing, Background, BatchConfig, LightingPreset, RenderConfig, RenderConfigBuilder,
-    ViewConfig, ViewPreset,
+    AntiAliasing, Background, BatchConfig, ColorMap, LightingPreset, RenderConfig,
+    RenderConfigBuilder, ViewConfig, ViewPreset,
 };
 pub use mesh::BoundingBox;
 pub use obj::ObjReader;
@@ -265,6 +265,11 @@ pub fn render_to_image(
         overlay::apply_dimensions(&mut image, &bounds, &overlay_cam, &config.dimension_config);
     }
 
+    // Apply watermark overlay if enabled
+    if let Some(source) = load_watermark_source(config)? {
+        overlay::apply_watermark(&mut image, &source, &config.watermark_config);
+    }
+
     if config.verbose {
         eprintln!("Rendered {}x{} image", config.width, config.height);
     }
@@ -367,6 +372,9 @@ pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderEr
         None
     };
 
+    // Load the watermark once and composite it onto every frame
+    let watermark_source = load_watermark_source(config)?;
+
     // Render each frame at a different azimuth
     for i in 0..frame_count {
         let azimuth = (i as f32 / frame_count as f32) * 360.0;
@@ -391,6 +399,11 @@ pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderEr
                 &config.dimension_config,
                 fixed_label_edges,
             );
+        }
+
+        // Apply watermark overlay if enabled
+        if let Some(ref source) = watermark_source {
+            overlay::apply_watermark(&mut frame_image, source, &config.watermark_config);
         }
 
         frames.push(frame_image);
@@ -435,6 +448,61 @@ pub fn render_animated(config: &RenderConfig) -> Result<RenderMetadata, RenderEr
     }
 
     Ok(metadata)
+}
+
+/// Load the watermark source image if one is configured.
+///
+/// Returns `Ok(None)` when no watermark path is set. A missing or undecodable
+/// watermark file is reported as a configuration error.
+fn load_watermark_source(config: &RenderConfig) -> Result<Option<image::RgbaImage>, RenderError> {
+    match &config.watermark_config.path {
+        Some(path) => {
+            let source = overlay::load_watermark(path).map_err(RenderError::Config)?;
+            Ok(Some(source))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Build a value-keyed color override map from the index-keyed `--color-map`
+/// config and the mesh's embedded palette.
+///
+/// `color_map` keys are palette indices (as shown by `--list-colors`). Each
+/// index is resolved to its original palette color, producing a map from
+/// original color to override color that can be applied to resolved per-vertex
+/// colors during rasterization. Out-of-range indices are ignored.
+fn build_color_overrides(
+    reader: &MeshReader,
+    color_map: &cli::ColorMap,
+) -> std::collections::HashMap<[u8; 4], [u8; 4]> {
+    let mut overrides = std::collections::HashMap::new();
+    if color_map.is_empty() {
+        return overrides;
+    }
+    let palette = reader.color_palette();
+    for (&idx, &new_color) in color_map {
+        if let Some(&original) = palette.get(idx as usize) {
+            overrides.insert(original, new_color);
+        }
+    }
+    overrides
+}
+
+/// Apply palette color overrides to a triangle's resolved vertex colors in place.
+fn apply_color_overrides(
+    tri: &mut Triangle,
+    overrides: &std::collections::HashMap<[u8; 4], [u8; 4]>,
+) {
+    if overrides.is_empty() {
+        return;
+    }
+    if let Some(colors) = tri.vertex_colors.as_mut() {
+        for c in colors.iter_mut() {
+            if let Some(&new_color) = overrides.get(c) {
+                *c = new_color;
+            }
+        }
+    }
 }
 
 fn render_single_view(
@@ -485,8 +553,10 @@ fn render_single_view(
     }
 
     // Render triangles (will occlude back bounding box edges via depth test)
+    let color_overrides = build_color_overrides(reader, &config.color_map);
     for result in reader.triangles()? {
-        let tri = result?;
+        let mut tri = result?;
+        apply_color_overrides(&mut tri, &color_overrides);
         fb.rasterize_triangle(&tri, &cam, config);
     }
 
@@ -542,8 +612,10 @@ fn render_animation_frame(
     }
 
     // Render triangles (will occlude back bounding box edges via depth test)
+    let color_overrides = build_color_overrides(reader, &config.color_map);
     for result in reader.triangles()? {
-        let tri = result?;
+        let mut tri = result?;
+        apply_color_overrides(&mut tri, &color_overrides);
         fb.rasterize_triangle(&tri, &cam, config);
     }
 
@@ -623,6 +695,7 @@ fn render_print_grid_to_image(
             background_color: config.background_color,
             material_color: config.material_color,
             use_mesh_colors: config.use_mesh_colors,
+            color_map: config.color_map.clone(),
             lighting: config.lighting,
             metadata_path: None,
             quiet: true,
@@ -631,6 +704,8 @@ fn render_print_grid_to_image(
             frames: 0,
             frame_delay: 0,
             dimension_config: config.dimension_config.clone(),
+            // The watermark is applied once to the final composite, not per quadrant.
+            watermark_config: overlay::WatermarkConfig::default(),
         };
 
         let mut quad_image = render_single_view(&quad_config, &reader, &bounds)?;
@@ -655,6 +730,11 @@ fn render_print_grid_to_image(
         composite
             .copy_from(&quad_image, x_offset, y_offset)
             .map_err(|e| RenderError::Config(format!("failed to composite grid: {e}")))?;
+    }
+
+    // Apply watermark once to the final composite (not per quadrant)
+    if let Some(source) = load_watermark_source(config)? {
+        overlay::apply_watermark(&mut composite, &source, &config.watermark_config);
     }
 
     if config.verbose {

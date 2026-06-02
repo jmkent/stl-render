@@ -31,7 +31,7 @@ stl-render model.3mf -o preview.gif --animate
 | Configuration validation | ✓ |
 | Release packaging (M16) | Planned |
 | Dimension overlay (M17) | ✓ |
-| Watermark overlay (M18) | Planned |
+| Watermark overlay (M18) | ✓ |
 | 3MF materials/colors (M19) | ✓ |
 
 ---
@@ -84,7 +84,9 @@ stl-render model.3mf -o preview.gif --animate
 
 ---
 
-### M18: Watermark Overlay
+### M18: Watermark Overlay ✓
+
+**Status:** Complete. See ARCHITECTURE.md for implementation details.
 
 **Goal:** Composite a creator logo/watermark onto output for branding model previews.
 
@@ -138,28 +140,35 @@ fn apply_watermark(image: &mut RgbaImage, watermark: &RgbaImage, config: &Waterm
 
 #### Test Plan
 
-- [ ] Watermark appears at correct position
-- [ ] Opacity reduces watermark visibility correctly
-- [ ] Scale produces expected watermark size
-- [ ] Margin offsets from edges correctly
-- [ ] Transparency preserved (watermark alpha + model)
-- [ ] Works with animated GIF (watermark on each frame)
-- [ ] Error on missing/invalid watermark file
-- [ ] Works in batch mode (same watermark on all outputs)
+- [x] Watermark appears at correct position
+- [x] Opacity reduces watermark visibility correctly
+- [x] Scale produces expected watermark size
+- [x] Margin offsets from edges correctly
+- [x] Transparency preserved (straight-alpha over compositing onto transparent + model)
+- [x] Works with animated GIF (watermark on each frame)
+- [x] Error on missing/invalid watermark file
+- [x] Works in batch mode (same watermark on all outputs)
 
 **Acceptance:** `--watermark logo.png` composites logo at specified position with configurable opacity and scale.
+
+**Notes:**
+- Compositing lives in `src/overlay.rs` (`WatermarkConfig`, `WatermarkPosition`, `load_watermark`, `apply_watermark`); applied in `src/lib.rs` for static, print-grid (once on the composite), and animated (once per frame) outputs.
+- Uses straight-alpha "over" compositing so transparent backgrounds stay correct; watermark is resized with Lanczos3 for deterministic output.
+- Position accepts both hyphenated and unhyphenated names (`bottom-right`/`bottomright`); invalid position/opacity/scale are usage errors (exit 1); a missing/undecodable watermark file is a config error (exit 1).
 
 ---
 
 ### M19: 3MF Materials and Colors ✓
 
-**Status:** Core implementation complete. See ARCHITECTURE.md for details.
+**Status:** Complete. See ARCHITECTURE.md for details.
 
-**Outstanding items:**
-- [ ] Apply `--color-map` overrides during rendering (parsing implemented, application deferred)
+**Delivered:**
+- [x] Apply `--color-map` overrides during rendering (index→color, resolved against the embedded palette)
 - [x] Test fixture: `colored_cube.3mf` (6-face colored cube)
-- [ ] Test fixtures: `gradient.3mf`, `partial_colors.3mf`
-- [ ] Integration tests for colored 3MF rendering
+- [x] Test fixtures: `gradient.3mf` (per-vertex gradient), `partial_colors.3mf` (mixed colored/uncolored faces)
+- [x] Integration tests for colored 3MF rendering (palette, list-colors, force-color, color-map, gradient, partial colors)
+
+All colored fixtures are reproducible via `tools/fixtures/generate_fixtures.py`.
 
 ---
 

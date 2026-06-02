@@ -82,6 +82,22 @@ Output of `--list-colors`:
   5: #00ffff (alpha: 255)
 ```
 
+#### Overriding Palette Colors
+
+Use `--color-map` to recolor specific palette entries by index without editing the file. Indices match the `--list-colors` output, and each override replaces that color wherever it appears on the model.
+
+| Embedded Colors | Remapped with `--color-map` |
+|-----------------|------------------------------|
+| ![Colored Cube](examples/colormap_original.png) | ![Recolored Cube](examples/colormap_remapped.png) |
+
+```bash
+# Recolor several palette entries at once (index:hex pairs)
+stl-render colored_cube.3mf -o preview.png --view iso \
+  --color-map "0:#ffffff,1:#ff8800,2:#8800ff,3:#00aaff,4:#ffdd00,5:#ff0066"
+```
+
+Out-of-range indices are ignored. Overrides have no effect under `--force-color` (which discards embedded colors entirely).
+
 ## 3DBenchy
 
 [3DBenchy](https://www.3dbenchy.com) is a standard public domain 3D printing benchmark model. These examples demonstrate stl-render's capabilities with a real-world print model (225K triangles).
@@ -273,6 +289,51 @@ stl-render model.stl -o preview.gif --animate --frames 24 --frame-delay 150 --di
 ```
 
 The overlay automatically chooses high-contrast colors based on the rendered image.
+
+## Watermark
+
+Composite a logo or watermark (PNG with transparency) onto the output for consistent branding across a model collection. The watermark is scaled relative to the output width, placed with a margin inset, and alpha-blended so transparent regions of the logo show the render beneath.
+
+| Logo (PNG with alpha) | Watermarked Render |
+|-----------------------|--------------------|
+| ![Watermark Logo](examples/watermark_logo.png) | ![Benchy with Watermark](examples/benchy_watermark.png) |
+
+```bash
+# Default: bottom-right, 15% of output width, full opacity
+stl-render model.stl -o preview.png --watermark logo.png
+
+# Position, size, and margin
+stl-render model.stl -o preview.png --watermark logo.png \
+    --watermark-position bottom-right --watermark-scale 18 --watermark-margin 16
+
+# Semi-transparent overlay
+stl-render model.stl -o preview.png --watermark logo.png --watermark-opacity 50
+```
+
+### Watermark Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--watermark` | (none) | Path to watermark image (PNG with alpha) |
+| `--watermark-position` | `bottom-right` | `top-left`, `top-right`, `bottom-left`, `bottom-right`, `center` |
+| `--watermark-opacity` | `100` | Opacity percentage (0–100) |
+| `--watermark-scale` | `15` | Watermark width as a percent of output width |
+| `--watermark-margin` | `10` | Inset from the edges, in pixels |
+
+The watermark applies to every output mode:
+
+```bash
+# On each frame of an animation
+stl-render model.stl -o preview.gif --animate --frames 24 --watermark logo.png
+
+# Once on the final print-grid composite
+stl-render model.stl -o grid.png --view print-grid --watermark logo.png
+
+# Same watermark on every file in a batch
+stl-render *.stl -o output/ --watermark logo.png
+```
+
+A missing or undecodable watermark file is reported as an error; invalid position, opacity, or scale values are rejected as usage errors.
 
 ## Lighting Presets
 
@@ -478,6 +539,14 @@ stl-render model.stl -o grid.png \
     --aa 4x \
     --width 1024 \
     --height 1024
+
+# Branded preview for sharing
+stl-render model.stl -o preview.png \
+    --view print \
+    --material-color tan \
+    --aa 4x \
+    --background solid --background-color "#f4f4f4" \
+    --watermark logo.png --watermark-position bottom-right --watermark-scale 18
 
 # Batch render all angles for documentation
 stl-render model.stl -o docs/ \

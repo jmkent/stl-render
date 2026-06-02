@@ -505,9 +505,270 @@ pub fn apply_dimensions_with_labels(
     }
 }
 
+/// Placement of a watermark within the output image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum WatermarkPosition {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    #[default]
+    BottomRight,
+    Center,
+}
+
+/// Configuration for compositing a watermark onto rendered output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatermarkConfig {
+    /// Path to the watermark image (PNG with alpha). `None` disables watermarking.
+    pub path: Option<std::path::PathBuf>,
+    /// Placement within the output image.
+    pub position: WatermarkPosition,
+    /// Opacity percentage (0-100); multiplied into the watermark's alpha.
+    pub opacity: u8,
+    /// Watermark width as a percentage of the output width (must be > 0).
+    pub scale: u32,
+    /// Margin from the output edges, in output pixels.
+    pub margin: u32,
+}
+
+impl Default for WatermarkConfig {
+    fn default() -> Self {
+        Self {
+            path: None,
+            position: WatermarkPosition::default(),
+            opacity: 100,
+            scale: 15,
+            margin: 10,
+        }
+    }
+}
+
+impl WatermarkConfig {
+    /// Whether watermarking is enabled (a path is set).
+    pub fn enabled(&self) -> bool {
+        self.path.is_some()
+    }
+}
+
+/// Load and decode a watermark image into RGBA.
+pub fn load_watermark(path: &std::path::Path) -> Result<RgbaImage, String> {
+    let img = image::open(path)
+        .map_err(|e| format!("failed to load watermark '{}': {e}", path.display()))?;
+    Ok(img.into_rgba8())
+}
+
+/// Composite a watermark onto the target image at the configured position.
+///
+/// The watermark is scaled so its width is `config.scale` percent of the target
+/// width (preserving aspect ratio), placed with `config.margin` pixels of inset,
+/// and alpha-blended with `config.opacity` applied to its alpha channel.
+pub fn apply_watermark(target: &mut RgbaImage, source: &RgbaImage, config: &WatermarkConfig) {
+    if config.opacity == 0 || config.scale == 0 {
+        return;
+    }
+    if source.width() == 0 || source.height() == 0 {
+        return;
+    }
+
+    let (iw, ih) = target.dimensions();
+
+    // Target watermark width in pixels, preserving aspect ratio.
+    let target_w = ((iw as u64 * config.scale as u64) / 100).max(1) as u32;
+    let target_h =
+        ((source.height() as u64 * target_w as u64) / source.width() as u64).max(1) as u32;
+
+    let scaled = image::imageops::resize(
+        source,
+        target_w,
+        target_h,
+        image::imageops::FilterType::Lanczos3,
+    );
+
+    let (tw, th) = scaled.dimensions();
+    let m = config.margin;
+    let (ox, oy) = match config.position {
+        WatermarkPosition::TopLeft => (m, m),
+        WatermarkPosition::TopRight => (iw.saturating_sub(tw + m), m),
+        WatermarkPosition::BottomLeft => (m, ih.saturating_sub(th + m)),
+        WatermarkPosition::BottomRight => (iw.saturating_sub(tw + m), ih.saturating_sub(th + m)),
+        WatermarkPosition::Center => (iw.saturating_sub(tw) / 2, ih.saturating_sub(th) / 2),
+    };
+
+    let opacity = config.opacity.min(100) as f32 / 100.0;
+
+    for (wx, wy, src) in scaled.enumerate_pixels() {
+        let x = ox + wx;
+        let y = oy + wy;
+        if x >= iw || y >= ih {
+            continue;
+        }
+
+        let src_a = (src[3] as f32 / 255.0) * opacity;
+        if src_a <= 0.0 {
+            continue;
+        }
+
+        let dst = target.get_pixel_mut(x, y);
+        let dst_a = dst[3] as f32 / 255.0;
+
+        // Straight-alpha "over" compositing (correct for transparent backgrounds).
+        let out_a = src_a + dst_a * (1.0 - src_a);
+        let blend = |s: u8, d: u8| -> u8 {
+            if out_a <= 0.0 {
+                0
+            } else {
+                let v = (s as f32 * src_a + d as f32 * dst_a * (1.0 - src_a)) / out_a;
+                v.round().clamp(0.0, 255.0) as u8
+            }
+        };
+
+        *dst = Rgba([
+            blend(src[0], dst[0]),
+            blend(src[1], dst[1]),
+            blend(src[2], dst[2]),
+            (out_a * 255.0).round().clamp(0.0, 255.0) as u8,
+        ]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Solid-color RGBA watermark for compositing tests.
+    fn solid_watermark(w: u32, h: u32, color: [u8; 4]) -> RgbaImage {
+        RgbaImage::from_pixel(w, h, Rgba(color))
+    }
+
+    #[test]
+    fn test_watermark_position_bottom_right() {
+        let mut target = RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 255]));
+        let wm = solid_watermark(40, 40, [255, 0, 0, 255]);
+        let config = WatermarkConfig {
+            path: Some("x".into()),
+            position: WatermarkPosition::BottomRight,
+            opacity: 100,
+            scale: 20, // 20% of 100 = 20px wide (square -> 20px tall)
+            margin: 5,
+        };
+        apply_watermark(&mut target, &wm, &config);
+
+        // Watermark is 20x20 at bottom-right with 5px margin: x in [75,95), y in [75,95).
+        assert_eq!(target.get_pixel(80, 80), &Rgba([255, 0, 0, 255]));
+        // Outside the watermark stays background.
+        assert_eq!(target.get_pixel(10, 10), &Rgba([0, 0, 0, 255]));
+        // Margin region (last 5px) is untouched.
+        assert_eq!(target.get_pixel(97, 97), &Rgba([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn test_watermark_position_top_left_respects_margin() {
+        let mut target = RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 255]));
+        let wm = solid_watermark(10, 10, [0, 255, 0, 255]);
+        let config = WatermarkConfig {
+            path: Some("x".into()),
+            position: WatermarkPosition::TopLeft,
+            opacity: 100,
+            scale: 20,
+            margin: 8,
+        };
+        apply_watermark(&mut target, &wm, &config);
+
+        // 20x20 watermark inset 8px: covers [8,28). Inside the margin stays bg.
+        assert_eq!(target.get_pixel(2, 2), &Rgba([0, 0, 0, 255]));
+        assert_eq!(target.get_pixel(10, 10), &Rgba([0, 255, 0, 255]));
+    }
+
+    #[test]
+    fn test_watermark_opacity_blends() {
+        // Opaque red watermark at 50% opacity over a black background -> ~half red.
+        let mut target = RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 255]));
+        let wm = solid_watermark(10, 10, [255, 0, 0, 255]);
+        let config = WatermarkConfig {
+            path: Some("x".into()),
+            position: WatermarkPosition::Center,
+            opacity: 50,
+            scale: 50,
+            margin: 0,
+        };
+        apply_watermark(&mut target, &wm, &config);
+
+        let p = target.get_pixel(50, 50);
+        assert!(
+            (120..=135).contains(&p[0]),
+            "50% red over black should be ~127, got {}",
+            p[0]
+        );
+        assert_eq!(p[1], 0);
+        assert_eq!(p[3], 255);
+    }
+
+    #[test]
+    fn test_watermark_zero_opacity_is_noop() {
+        let mut target = RgbaImage::from_pixel(50, 50, Rgba([10, 20, 30, 255]));
+        let original = target.clone();
+        let wm = solid_watermark(10, 10, [255, 255, 255, 255]);
+        let config = WatermarkConfig {
+            path: Some("x".into()),
+            position: WatermarkPosition::Center,
+            opacity: 0,
+            scale: 50,
+            margin: 0,
+        };
+        apply_watermark(&mut target, &wm, &config);
+        assert_eq!(target, original, "zero opacity must not change the image");
+    }
+
+    #[test]
+    fn test_watermark_scale_controls_size() {
+        // A larger scale should cover more pixels.
+        let small_cfg = WatermarkConfig {
+            path: Some("x".into()),
+            position: WatermarkPosition::TopLeft,
+            opacity: 100,
+            scale: 10,
+            margin: 0,
+        };
+        let large_cfg = WatermarkConfig {
+            scale: 40,
+            ..small_cfg.clone()
+        };
+        let wm = solid_watermark(10, 10, [255, 0, 0, 255]);
+
+        let count_red = |cfg: &WatermarkConfig| {
+            let mut t = RgbaImage::from_pixel(200, 200, Rgba([0, 0, 0, 255]));
+            apply_watermark(&mut t, &wm, cfg);
+            t.pixels().filter(|p| p[0] > 200 && p[1] < 50).count()
+        };
+
+        assert!(
+            count_red(&large_cfg) > count_red(&small_cfg),
+            "larger scale should cover more pixels"
+        );
+    }
+
+    #[test]
+    fn test_watermark_preserves_transparent_background() {
+        // Compositing onto a fully transparent target keeps the watermark's
+        // own alpha (straight-alpha over compositing).
+        let mut target = RgbaImage::from_pixel(50, 50, Rgba([0, 0, 0, 0]));
+        let wm = solid_watermark(10, 10, [255, 0, 0, 128]);
+        let config = WatermarkConfig {
+            path: Some("x".into()),
+            position: WatermarkPosition::Center,
+            opacity: 100,
+            scale: 40,
+            margin: 0,
+        };
+        apply_watermark(&mut target, &wm, &config);
+        let p = target.get_pixel(25, 25);
+        assert_eq!(p[0], 255, "red channel preserved over transparent bg");
+        assert!(
+            (120..=136).contains(&p[3]),
+            "alpha should match watermark alpha (~128), got {}",
+            p[3]
+        );
+    }
 
     #[test]
     fn test_dimension_units_conversion() {

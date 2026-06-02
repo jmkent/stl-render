@@ -59,6 +59,7 @@ The parser supports the 3MF Materials extension for embedded colors:
 - Per-vertex colors are interpolated using barycentric coordinates (sRGB space per 3MF spec)
 - `--force-color` ignores embedded mesh colors, uses `--material-color` for all surfaces
 - `--list-colors` prints the color palette and exits
+- `--color-map "0:#ff0000,2:#00ff00"` overrides palette entries by index. Indices refer to the `--list-colors` palette; each override is resolved to its original palette color and substituted wherever that color appears during rasterization (out-of-range indices are ignored).
 
 ### Format Limitations
 
@@ -503,6 +504,33 @@ The `overlay` module (`src/overlay.rs`) provides dimension annotations overlaid 
 6. Result encoded to PNG/GIF
 
 Works with all output modes: single image, animated GIF (fixed label positions), and print-grid (uses print-front view).
+
+---
+
+## Watermark Overlay
+
+The `overlay` module also composites a creator watermark onto rendered output.
+
+```bash
+--watermark logo.png            # Enable (PNG with alpha)
+--watermark-position center     # top-left|top-right|bottom-left|bottom-right|center (default: bottom-right)
+--watermark-opacity 50          # 0-100 (default: 100)
+--watermark-scale 20            # percent of output width (default: 15)
+--watermark-margin 16           # px inset from edges (default: 10)
+```
+
+**Compositing (`apply_watermark`):**
+- The source is resized so its width is `scale` percent of the output width, preserving aspect ratio, using Lanczos3 for deterministic results.
+- It is placed at the configured corner/center with a `margin`-pixel inset (saturating, so oversized watermarks clip rather than panic).
+- Pixels are blended with straight-alpha "over" compositing, with `opacity` multiplied into the source alpha. This keeps transparent backgrounds correct (the output alpha is `src_a + dst_a·(1−src_a)`).
+- `opacity == 0` or `scale == 0` is a no-op.
+
+**Data flow:**
+- The watermark source is loaded once per render (`load_watermark`) and applied to:
+  - the single image (after the dimension overlay),
+  - each animation frame (loaded once, reused across frames),
+  - the print-grid composite (once on the final image, not per quadrant).
+- A missing or undecodable watermark file surfaces as `RenderError::Config` (exit code 1); invalid position/opacity/scale are caught at CLI parse time.
 
 ---
 

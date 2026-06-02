@@ -415,6 +415,7 @@ mod tests {
             background_color: [255, 255, 255],
             material_color: [200, 200, 200],
             use_mesh_colors: true,
+            color_map: Default::default(),
             lighting: LightingPreset::Flat,
             metadata_path: None,
             quiet: true,
@@ -423,6 +424,7 @@ mod tests {
             frames: 16,
             frame_delay: 100,
             dimension_config: crate::overlay::DimensionConfig::default(),
+            watermark_config: crate::overlay::WatermarkConfig::default(),
         }
     }
 

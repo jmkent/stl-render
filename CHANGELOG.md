@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Watermark overlay** (M18): `--watermark <png>` composites a logo onto output, with `--watermark-position`, `--watermark-opacity`, `--watermark-scale`, and `--watermark-margin`. Works with PNG, animated GIF (every frame), the print grid (final composite), and batch mode.
+- **3MF color-map overrides** (M19): `--color-map "0:#ff0000,2:#00ff00"` overrides embedded palette colors by index (indices match `--list-colors`) during rendering.
+
+### Changed
+
+- Colored 3MF test fixtures (`colored_cube.3mf`, `gradient.3mf`, `partial_colors.3mf`) are now reproducible via `tools/fixtures/generate_fixtures.py`.
+
 ## [0.1.0] - 2026-05-14
 
 Initial release.

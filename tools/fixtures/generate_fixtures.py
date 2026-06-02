@@ -349,6 +349,135 @@ def save_3mf(meshes: list[tuple[str, mesh.Mesh]], path: Path):
         print(f"  {path.name}: {total_triangles} triangles ({obj_count} objects)")
 
 
+def colored_model_xml(name, vertices, triangles, palette):
+    """Build a 3MF model XML with a material-extension colorgroup.
+
+    Args:
+        name: Object name.
+        vertices: List of (x, y, z) tuples.
+        triangles: List of (v1, v2, v3, p1, p2, p3) tuples. If p1/p2/p3 are
+            None the triangle is emitted without a pid (uncolored, falls back
+            to the renderer's material color).
+        palette: List of "#RRGGBB" color strings for colorgroup id 1.
+
+    Returns:
+        UTF-8 encoded XML bytes.
+    """
+    CORE = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
+    MAT = "http://schemas.microsoft.com/3dmanufacturing/material/2015/02"
+
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>']
+    lines.append(f'<model unit="millimeter" xmlns="{CORE}" xmlns:m="{MAT}">')
+    lines.append('  <resources>')
+    lines.append('    <m:colorgroup id="1">')
+    for color in palette:
+        lines.append(f'      <m:color color="{color}"/>')
+    lines.append('    </m:colorgroup>')
+    lines.append(f'    <object id="2" type="model" name="{name}">')
+    lines.append('      <mesh>')
+    lines.append('        <vertices>')
+    for x, y, z in vertices:
+        lines.append(f'          <vertex x="{x:.6g}" y="{y:.6g}" z="{z:.6g}"/>')
+    lines.append('        </vertices>')
+    lines.append('        <triangles>')
+    for v1, v2, v3, p1, p2, p3 in triangles:
+        if p1 is None:
+            lines.append(f'          <triangle v1="{v1}" v2="{v2}" v3="{v3}"/>')
+        else:
+            lines.append(
+                f'          <triangle v1="{v1}" v2="{v2}" v3="{v3}" '
+                f'pid="1" p1="{p1}" p2="{p2}" p3="{p3}"/>'
+            )
+    lines.append('        </triangles>')
+    lines.append('      </mesh>')
+    lines.append('    </object>')
+    lines.append('  </resources>')
+    lines.append('  <build>')
+    lines.append('    <item objectid="2"/>')
+    lines.append('  </build>')
+    lines.append('</model>')
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def save_colored_3mf(model_xml: bytes, path: Path, description: str):
+    """Write a colored 3MF (model XML supplied directly) into an OPC package."""
+    content_types = b'''<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>'''
+
+    rels = b'''<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>'''
+
+    with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("3D/3dmodel.model", model_xml)
+
+    print(f"  {path.name}: {description}")
+
+
+# Unit cube corner vertices, shared by the colored cube fixtures.
+_CUBE_VERTS = [
+    (-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (0.5, 0.5, -0.5), (-0.5, 0.5, -0.5),
+    (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, 0.5, 0.5), (-0.5, 0.5, 0.5),
+]
+
+
+def colored_cube_model_xml():
+    """Cube with a distinct flat color on each of the six faces."""
+    # (v1, v2, v3, face_color_index) for each triangle, two per face.
+    faces = [
+        (0, 3, 1, 0), (1, 3, 2, 0),  # bottom  -> red
+        (4, 5, 7, 1), (5, 6, 7, 1),  # top     -> green
+        (0, 1, 4, 2), (1, 5, 4, 2),  # front   -> blue
+        (2, 3, 6, 3), (3, 7, 6, 3),  # back    -> yellow
+        (0, 4, 3, 4), (3, 4, 7, 4),  # left    -> magenta
+        (1, 2, 5, 5), (2, 6, 5, 5),  # right   -> cyan
+    ]
+    triangles = [(v1, v2, v3, c, c, c) for v1, v2, v3, c in faces]
+    palette = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
+    return colored_model_xml("colored_cube", _CUBE_VERTS, triangles, palette)
+
+
+def gradient_model_xml():
+    """Flat quad with a different palette color at each corner (per-vertex)."""
+    vertices = [
+        (-1.0, -1.0, 0.0),  # 0 -> red
+        (1.0, -1.0, 0.0),   # 1 -> green
+        (1.0, 1.0, 0.0),    # 2 -> blue
+        (-1.0, 1.0, 0.0),   # 3 -> white
+    ]
+    triangles = [
+        (0, 1, 2, 0, 1, 2),
+        (0, 2, 3, 0, 2, 3),
+    ]
+    palette = ["#FF0000", "#00FF00", "#0000FF", "#FFFFFF"]
+    return colored_model_xml("gradient", vertices, triangles, palette)
+
+
+def partial_colors_model_xml():
+    """Cube where only some faces carry colors; the rest are uncolored."""
+    # Bottom red, top green; remaining faces have no pid (material color).
+    faces = [
+        (0, 3, 1, 0), (1, 3, 2, 0),  # bottom -> red
+        (4, 5, 7, 1), (5, 6, 7, 1),  # top    -> green
+        (0, 1, 4, None), (1, 5, 4, None),  # front  -> uncolored
+        (2, 3, 6, None), (3, 7, 6, None),  # back   -> uncolored
+        (0, 4, 3, None), (3, 4, 7, None),  # left   -> uncolored
+        (1, 2, 5, None), (2, 6, 5, None),  # right  -> uncolored
+    ]
+    triangles = [
+        (v1, v2, v3, c, c, c) if c is not None else (v1, v2, v3, None, None, None)
+        for v1, v2, v3, c in faces
+    ]
+    palette = ["#FF0000", "#00FF00"]
+    return colored_model_xml("partial_colors", _CUBE_VERTS, triangles, palette)
+
+
 def create_large_sphere(target_triangles: int) -> mesh.Mesh:
     """Create a sphere with approximately target_triangles triangles.
 
@@ -444,6 +573,24 @@ def main():
     for i in range(len(sphere_mesh.vectors)):
         sphere_mesh.vectors[i] += np.array([1.5, 0, 0])
     save_3mf(multi_objects, output_dir / "multi_object.3mf")
+
+    # Colored 3MF files (material extension colorgroups)
+    print("\n3MF colored files:")
+    save_colored_3mf(
+        colored_cube_model_xml(),
+        output_dir / "colored_cube.3mf",
+        "12 triangles, 6 per-face colors",
+    )
+    save_colored_3mf(
+        gradient_model_xml(),
+        output_dir / "gradient.3mf",
+        "2 triangles, 4 per-vertex colors (gradient)",
+    )
+    save_colored_3mf(
+        partial_colors_model_xml(),
+        output_dir / "partial_colors.3mf",
+        "12 triangles, 2 colored faces + 4 uncolored",
+    )
 
     # Create an empty STL (just header, 0 triangles) - manually
     empty_path = output_dir / "empty.stl"
