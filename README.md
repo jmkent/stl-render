@@ -182,16 +182,15 @@ The watermark is scaled to `--watermark-scale` percent of the output width (pres
 
 ## More Examples
 
-See [EXAMPLES.md](EXAMPLES.md) for comprehensive examples including:
+See [EXAMPLES.md](EXAMPLES.md) for a feature-by-feature reference, ordered from
+the simplest invocation to advanced workflows, including:
+- View presets, material colors, lighting, backgrounds, and anti-aliasing
+- Image size, padding, and custom camera angles
 - Animated GIF output
-- Print view presets and grid
-- Batch processing multiple files
-- Material colors (filament presets)
-- Background options
-- Anti-aliasing comparison
-- Custom camera angles
+- Dimension and watermark overlays
+- 3MF scenes and embedded colors (`--list-colors`, `--color-map`)
 - Metadata output
-- Piping and automation
+- Batch processing and piping
 
 ## CLI Reference
 
@@ -335,7 +334,9 @@ Typical render times (512x512, 2x AA, Apple M1):
 | 50 MB | ~1M | ~500ms |
 | 500 MB | ~10M | ~2s |
 
-Memory usage is bounded by output resolution, not input size.
+Memory usage is bounded by output resolution, not input size — STL files stream via mmap, so a 500 MB model renders in roughly the same memory as a 1 MB one.
+
+> **Note:** Animated GIFs are the exception. All frames are held in memory before encoding, so peak usage scales with `--frames` × output resolution. For high frame counts at large sizes, reduce `--frames` or the output dimensions.
 
 ## Acknowledgments
 

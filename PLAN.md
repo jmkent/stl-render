@@ -1,48 +1,35 @@
 # STL Renderer Project Plan
 
+This plan tracks **outstanding work only**. Implemented features are documented
+in [README.md](README.md) (usage) and [ARCHITECTURE.md](ARCHITECTURE.md)
+(design); shipped changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
 ## Goal
 
-Build a standalone Rust binary that renders 3D mesh files (STL, OBJ, 3MF) to deterministic 2D PNG previews or animated GIF.
+A standalone Rust binary that renders 3D mesh files (STL, OBJ, 3MF) to
+deterministic 2D PNG previews or animated GIFs.
 
 ```bash
 stl-render model.stl -o preview.png --view print --material-color tan
 stl-render model.3mf -o preview.gif --animate
 ```
 
-## Project Status
-
-**Completed milestones (M0-M15):** See ARCHITECTURE.md for implementation details.
-
-| Feature | Status |
-|---------|--------|
-| STL parsing (binary/ASCII, streaming) | ✓ |
-| OBJ parsing (buffered) | ✓ |
-| 3MF parsing (ZIP/XML, buffered) | ✓ |
-| 3MF scene graph (transforms, builds, components, units) | ✓ |
-| Software rasterizer | ✓ |
-| View presets (7 standard + 5 print) | ✓ |
-| Print grid composite | ✓ |
-| Lighting presets (flat/studio/technical) | ✓ |
-| Material color presets | ✓ |
-| Anti-aliasing (2x/4x SSAA) | ✓ |
-| Animated GIF output | ✓ |
-| Batch mode with error handling | ✓ |
-| Library API | ✓ |
-| Configuration validation | ✓ |
-| Release packaging (M16) | Planned |
-| Dimension overlay (M17) | ✓ |
-| Watermark overlay (M18) | ✓ |
-| 3MF materials/colors (M19) | ✓ |
+The rendering pipeline is feature-complete for v1. The only remaining milestone
+is publishing the first release.
 
 ---
 
-## Outstanding Work
+## M16: Release Packaging
 
-### M16: Release Packaging
+**Goal:** Cut the first tagged release with cross-platform binaries and a
+crates.io publish.
 
-**Goal:** Automated release pipeline with cross-platform binaries and crates.io publishing.
+**Status:** The pipeline is implemented in `.github/workflows/release.yml` — a
+tag push builds all six targets below, attaches archives to a GitHub Release,
+and runs `cargo publish`. What remains is executing and verifying the first
+release.
 
-#### Build Targets
+### Build Targets
 
 | Target | OS | Archive |
 |--------|-------|---------|
@@ -53,167 +40,19 @@ stl-render model.3mf -o preview.gif --animate
 | `aarch64-apple-darwin` | macos-latest | .tar.gz |
 | `x86_64-pc-windows-msvc` | windows-latest | .zip |
 
-#### Release Process
+### Release Process
 
-1. Update `version` in `Cargo.toml`
-2. Update `CHANGELOG.md` with release date
+1. Bump `version` in `Cargo.toml` (e.g. `0.2.0`)
+2. Move the `CHANGELOG.md` `[Unreleased]` entries under the new version with a date
 3. Commit and tag: `git tag v0.2.0`
 4. Push: `git push origin main --tags`
-5. Workflow builds binaries, creates release, publishes to crates.io
+5. Workflow builds binaries, creates the release, and publishes to crates.io
 
-#### Pre-Release Checklist
+### Pre-Release Checklist
 
-- [ ] Run `cargo publish --dry-run --locked`
-- [ ] Verify all 6 targets build in CI
-- [ ] Test downloaded binaries on each platform
+- [ ] `cargo publish --dry-run --locked` succeeds (validates packaged crate)
+- [ ] All six targets build in CI
+- [ ] Downloaded binaries run on each platform
 
-**Acceptance:** Push tag triggers workflow; all platforms build; GitHub Release and crates.io publish succeed.
-
----
-
-### M17: Dimension Overlay ✓
-
-**Status:** Complete. See ARCHITECTURE.md for implementation details.
-
-**Features:**
-- `--dimensions` flag enables a depth-aware 3D bounding box with X/Y/Z labels
-- `--units mm|in` for display units
-- `--dimension-color <hex>` for custom colors (default: auto-contrast)
-- Embedded 5x7 bitmap font for text rendering (no external dependencies)
-- Works with static PNG, animated GIF, and print-grid outputs
-
----
-
-### M18: Watermark Overlay ✓
-
-**Status:** Complete. See ARCHITECTURE.md for implementation details.
-
-**Goal:** Composite a creator logo/watermark onto output for branding model previews.
-
-#### Use Case
-
-Creators sharing models want consistent branding. Manual watermarking in image editors doesn't scale for batch processing collections.
-
-#### CLI Interface
-
-```bash
-stl-render model.stl -o preview.png --watermark logo.png
-stl-render model.stl -o preview.png --watermark logo.png --watermark-position bottom-right
-stl-render model.stl -o preview.png --watermark logo.png --watermark-opacity 50 --watermark-scale 20
-```
-
-**Flags:**
-- `--watermark <path>` - Path to watermark image (PNG with transparency)
-- `--watermark-position <pos>` - Placement: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `center` (default: bottom-right)
-- `--watermark-opacity <0-100>` - Opacity percentage (default: 100)
-- `--watermark-scale <percent>` - Scale relative to output width (default: 15)
-- `--watermark-margin <px>` - Margin from edges (default: 10)
-
-#### Implementation
-
-**Image compositing:**
-- Load watermark PNG (must support alpha channel)
-- Scale to target size based on output dimensions
-- Alpha-blend onto rendered frame at specified position
-- Apply opacity by multiplying alpha channel
-
-**Algorithm:**
-```rust
-fn apply_watermark(image: &mut RgbaImage, watermark: &RgbaImage, config: &WatermarkConfig) {
-    let scaled = resize(watermark, target_width, target_height);
-    let (x, y) = compute_position(image.dimensions(), scaled.dimensions(), config);
-    
-    for (wx, wy, pixel) in scaled.enumerate_pixels() {
-        let dst = image.get_pixel_mut(x + wx, y + wy);
-        *dst = alpha_blend(*dst, *pixel, config.opacity);
-    }
-}
-```
-
-**Files to modify:**
-- `src/cli.rs` - Add flags, watermark config
-- `src/output.rs` or `src/overlay.rs` - Watermark compositing
-- `src/lib.rs` - Apply watermark after render
-
-**Dependencies:**
-- No new deps needed; `image` crate handles PNG loading and pixel manipulation
-
-#### Test Plan
-
-- [x] Watermark appears at correct position
-- [x] Opacity reduces watermark visibility correctly
-- [x] Scale produces expected watermark size
-- [x] Margin offsets from edges correctly
-- [x] Transparency preserved (straight-alpha over compositing onto transparent + model)
-- [x] Works with animated GIF (watermark on each frame)
-- [x] Error on missing/invalid watermark file
-- [x] Works in batch mode (same watermark on all outputs)
-
-**Acceptance:** `--watermark logo.png` composites logo at specified position with configurable opacity and scale.
-
-**Notes:**
-- Compositing lives in `src/overlay.rs` (`WatermarkConfig`, `WatermarkPosition`, `load_watermark`, `apply_watermark`); applied in `src/lib.rs` for static, print-grid (once on the composite), and animated (once per frame) outputs.
-- Uses straight-alpha "over" compositing so transparent backgrounds stay correct; watermark is resized with Lanczos3 for deterministic output.
-- Position accepts both hyphenated and unhyphenated names (`bottom-right`/`bottomright`); invalid position/opacity/scale are usage errors (exit 1); a missing/undecodable watermark file is a config error (exit 1).
-
----
-
-### M19: 3MF Materials and Colors ✓
-
-**Status:** Complete. See ARCHITECTURE.md for details.
-
-**Delivered:**
-- [x] Apply `--color-map` overrides during rendering (index→color, resolved against the embedded palette)
-- [x] Test fixture: `colored_cube.3mf` (6-face colored cube)
-- [x] Test fixtures: `gradient.3mf` (per-vertex gradient), `partial_colors.3mf` (mixed colored/uncolored faces)
-- [x] Integration tests for colored 3MF rendering (palette, list-colors, force-color, color-map, gradient, partial colors)
-
-All colored fixtures are reproducible via `tools/fixtures/generate_fixtures.py`.
-
----
-
-### Remaining Documentation Tasks
-
-From Known Issues review - functional code complete, documentation pending:
-
-- [x] **KI4:** Document 3MF support scope (scene graph, transforms, units, colors) — see ARCHITECTURE.md
-- [x] **KI5:** OBJ format limitations documented in README.md
-- [ ] **KI8:** Add memory note to README for high-frame-count GIF animations
-
----
-
-## Known Issues Summary
-
-| KI | Issue | Status |
-|----|-------|--------|
-| KI1 | Public API Surface | ✓ Reviewed, acceptable for v1 |
-| KI2 | Configuration Validation | ✓ Implemented (`RenderConfig::validate()`) |
-| KI3 | Batch Error Aggregation | ✓ Implemented (severity-based exit codes) |
-| KI4 | 3MF Compatibility | ✓ Full scene graph + colors (M14, M19) |
-| KI5 | OBJ Compatibility | ✓ Documented in README |
-| KI6 | User-Facing Terminology | ✓ Implemented (`RenderError::Mesh`) |
-| KI7 | Release Hygiene | Mostly done, needs publish dry-run |
-| KI8 | GIF Memory Use | ✓ Acceptable, needs README note |
-| KI9 | Rasterizer Robustness | ✓ Acceptable (backface culling expected) |
-| KI10 | Degenerate Geometry | ✓ Implemented (zero-area skip, NaN reject) |
-| KI11 | Output Error Handling | ✓ Implemented |
-
----
-
-## Dependencies
-
-```toml
-[dependencies]
-clap = { version = "4", features = ["derive"] }
-glam = "0.29"
-image = { version = "0.25", default-features = false, features = ["png", "gif"] }
-memmap2 = "0.9"
-quick-xml = "0.37"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
-zip = "2"
-
-[dev-dependencies]
-tempfile = "3"
-```
+**Acceptance:** Pushing the tag triggers the workflow; all platforms build; the
+GitHub Release and crates.io publish both succeed.

@@ -650,6 +650,8 @@ Memory is dominated by the framebuffer, not input geometry. STL files stream via
 
 For typical models at default settings (512×512, 2x AA), expect 20-60 MB RSS regardless of input file size.
 
+Animated GIFs are the exception: all frames are buffered in memory before encoding, so peak usage scales with `--frames` × output resolution rather than input size.
+
 ---
 
 ## Error Handling

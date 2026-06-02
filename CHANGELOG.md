@@ -9,12 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Watermark overlay** (M18): `--watermark <png>` composites a logo onto output, with `--watermark-position`, `--watermark-opacity`, `--watermark-scale`, and `--watermark-margin`. Works with PNG, animated GIF (every frame), the print grid (final composite), and batch mode.
-- **3MF color-map overrides** (M19): `--color-map "0:#ff0000,2:#00ff00"` overrides embedded palette colors by index (indices match `--list-colors`) during rendering.
+- **OBJ format support**: Wavefront `.obj` files (vertices and faces, fan-triangulated for polygons), auto-detected from file content.
+- **3MF format support**: ZIP/XML `.3mf` packages with the full Core scene graph — build items, component references with nested transforms, and unit metadata (mm, cm, inch, foot, micron). Multi-object files render all objects with correct positioning; component cycles are detected.
+- **3MF embedded colors**: colorgroups with per-face and per-vertex colors, interpolated and rendered by default. `--force-color` ignores embedded colors and uses `--material-color`; `--list-colors` prints the palette and exits.
+- **Palette overrides**: `--color-map "0:#ff0000,2:#00ff00"` recolors embedded palette entries by index (indices match `--list-colors`).
+- **Animated GIF output**: `--animate` renders a 360° rotating preview, with `--frames` and `--frame-delay`. A bounding-sphere radius keeps framing consistent across frames.
+- **Dimension overlay**: `--dimensions` draws a depth-aware bounding box with X/Y/Z labels (embedded bitmap font, no external deps), plus `--units mm|in` and `--dimension-color`. Works with PNG, GIF, and the print grid.
+- **Watermark overlay**: `--watermark <png>` composites a logo, with `--watermark-position`, `--watermark-opacity`, `--watermark-scale`, and `--watermark-margin`. Applies to PNG, every GIF frame, the print-grid composite, and batch outputs.
+- **Directory and recursive input discovery**: directory arguments expand to supported `.stl`/`.obj`/`.3mf` files (case-insensitive); `-r`/`--recursive` traverses subtrees and preserves relative output paths.
+- **Library API**: `render_to_image`, `render_animated`, and a unified `MeshReader` for embedding stl-render as a crate.
+- **Configuration validation**: `RenderConfig::validate()` rejects invalid sizes, padding, and frame counts before rendering.
+- **Continuous integration**: GitHub Actions for fmt/clippy/tests/MSRV and a cross-platform release workflow.
 
 ### Changed
 
-- Colored 3MF test fixtures (`colored_cube.3mf`, `gradient.3mf`, `partial_colors.3mf`) are now reproducible via `tools/fixtures/generate_fixtures.py`.
+- Batch mode reports one status line per file and aggregates errors by severity, returning the worst exit code (input errors take precedence over output errors).
+- Empty meshes (zero triangles) are rejected as input errors instead of producing blank output.
+- Standardized on Rust edition 2024 with a 1.88 MSRV.
+- Colored 3MF test fixtures (`colored_cube.3mf`, `gradient.3mf`, `partial_colors.3mf`) are reproducible via `tools/fixtures/generate_fixtures.py`.
+
+### Fixed
+
+- Degenerate geometry handling: zero-area triangles are skipped and NaN coordinates are rejected.
 
 ## [0.1.0] - 2026-05-14
 

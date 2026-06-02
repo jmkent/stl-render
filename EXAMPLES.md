@@ -1,8 +1,11 @@
 # stl-render Examples
 
-This document showcases various rendering options available in stl-render.
+A feature-by-feature reference, ordered from the simplest invocation to advanced
+workflows. Each section shows what an option does and how to use it.
 
 ## Quick Start
+
+Render a mesh to PNG with the defaults (iso view, 512×512, transparent background):
 
 ```bash
 stl-render model.stl -o preview.png
@@ -10,11 +13,8 @@ stl-render model.stl -o preview.png
 
 ## Supported Formats
 
-stl-render supports STL (binary and ASCII), OBJ, and 3MF files with automatic format detection.
-
-### Format Comparison
-
-All formats produce identical renders for the same geometry:
+STL (binary and ASCII), OBJ, and 3MF are auto-detected from file **content**, not
+the extension. All formats produce identical renders for the same geometry.
 
 | STL (binary/ASCII) | OBJ (text) | 3MF (ZIP/XML) |
 |--------------------|------------|---------------|
@@ -26,168 +26,33 @@ stl-render model.obj -o preview.png  # Wavefront OBJ
 stl-render model.3mf -o preview.png  # 3MF package
 ```
 
-Format is auto-detected from file content, not extension.
-
-### 3MF Features
-
-3MF files support advanced features like multi-object scenes and assemblies:
-
-| Multi-Object | Assembly with Components |
-|--------------|--------------------------|
-| ![Multi Object](examples/format_3mf_multi.png) | ![Assembly](examples/format_3mf_assembly.png) |
-
-```bash
-# Multi-object files render all objects with correct positioning
-stl-render multi_object.3mf -o preview.png --view print
-
-# Assemblies with components and transforms work correctly
-stl-render assembly.3mf -o preview.png --view iso
-```
-
-3MF support includes:
-- Build items with transform matrices
-- Component references with nested transforms
-- Unit metadata (mm, cm, inch, foot, micron)
-- Colorgroups with per-face and per-vertex colors
-
-### 3MF Color Support
-
-3MF files with embedded colorgroups render per-face and per-vertex colors automatically:
-
-| Colored Cube (static) | Colored Cube (animated) |
-|-----------------------|-------------------------|
-| ![Colored Cube](examples/format_3mf_colored.png) | ![Colored Cube Animated](examples/format_3mf_colored.gif) |
-
-```bash
-# Render with embedded mesh colors (default)
-stl-render colored_model.3mf -o preview.png
-
-# Animated rotation showing all colored faces
-stl-render colored_model.3mf -o preview.gif --animate --frames 24
-
-# Ignore mesh colors, use uniform material color
-stl-render colored_model.3mf -o preview.png --force-color --material-color tan
-
-# List colors in a 3MF file
-stl-render model.3mf -o /dev/null --list-colors
-```
-
-Output of `--list-colors`:
-```text
-  0: #ff0000 (alpha: 255)
-  1: #00ff00 (alpha: 255)
-  2: #0000ff (alpha: 255)
-  3: #ffff00 (alpha: 255)
-  4: #ff00ff (alpha: 255)
-  5: #00ffff (alpha: 255)
-```
-
-#### Overriding Palette Colors
-
-Use `--color-map` to recolor specific palette entries by index without editing the file. Indices match the `--list-colors` output, and each override replaces that color wherever it appears on the model.
-
-| Embedded Colors | Remapped with `--color-map` |
-|-----------------|------------------------------|
-| ![Colored Cube](examples/colormap_original.png) | ![Recolored Cube](examples/colormap_remapped.png) |
-
-```bash
-# Recolor several palette entries at once (index:hex pairs)
-stl-render colored_cube.3mf -o preview.png --view iso \
-  --color-map "0:#ffffff,1:#ff8800,2:#8800ff,3:#00aaff,4:#ffdd00,5:#ff0066"
-```
-
-Out-of-range indices are ignored. Overrides have no effect under `--force-color` (which discards embedded colors entirely).
-
-## 3DBenchy
-
-[3DBenchy](https://www.3dbenchy.com) is a standard public domain 3D printing benchmark model. These examples demonstrate stl-render's capabilities with a real-world print model (225K triangles).
-
-| Blue Grey | Tan |
-|-----------|-----|
-| ![Benchy Blue Grey](examples/benchy_print_bluegrey.png) | ![Benchy Tan](examples/benchy_print_tan.png) |
-
-```bash
-stl-render 3DBenchy.stl -o benchy.png --view print --material-color blue-grey --aa 4x
-```
-
-## Animated GIF
-
-Generate a rotating animation of any model with the `--animate` flag:
-
-| Rotating 3DBenchy |
-|-------------------|
-| ![Animated Benchy](examples/benchy_animated.gif) |
-
-```bash
-stl-render 3DBenchy.stl -o preview.gif --animate --material-color tan --aa 4x
-```
-
-The animation rotates around the Z axis (print bed orientation) at a fixed 25° elevation, producing a smooth 360° loop.
-
-### Animation Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--animate` | (required) | Enable animated GIF output |
-| `--frames` | 16 | Number of frames in the animation |
-| `--frame-delay` | 100 | Milliseconds between frames |
-
-```bash
-# Quick preview (8 frames, fast)
-stl-render model.stl -o preview.gif --animate --frames 8 --frame-delay 50
-
-# Smooth animation (24 frames)
-stl-render model.stl -o preview.gif --animate --frames 24
-
-# Slow rotation (200ms per frame)
-stl-render model.stl -o preview.gif --animate --frame-delay 200
-```
-
-Animation works with all other options:
-
-```bash
-stl-render model.stl -o preview.gif --animate \
-    --material-color blue-grey \
-    --lighting studio \
-    --aa 4x \
-    --width 512 \
-    --height 512
-```
+3MF files also carry multi-object scenes, assemblies, and embedded colors — see
+[3MF Scenes & Colors](#3mf-scenes--colors).
 
 ## View Presets
 
-### Print Bed View (`--view print`)
+Pick the camera angle. Standard presets are Y-up; `print` presets are Z-up so the
+model sits as it would on a print bed, tilted slightly to show the top surface.
 
-The `print` view is designed for 3D printing previews. It uses Z-up orientation so the model appears as it would on a print bed, with a slight tilt to show the top surface.
-
-| Cube | Sphere | Cylinder |
+| Cube (print) | Sphere (print) | Cylinder (print) |
 |------|--------|----------|
 | ![Cube Print](examples/hero_cube.png) | ![Sphere Print](examples/hero_sphere.png) | ![Cylinder Print](examples/hero_cylinder.png) |
-
-```bash
-stl-render model.stl -o preview.png --view print --material-color tan
-```
-
-### View Comparison
 
 | Front | Top | Isometric | Print |
 |-------|-----|-----------|-------|
 | ![Front](examples/view_front.png) | ![Top](examples/view_top.png) | ![Iso](examples/view_iso.png) | ![Print](examples/view_print.png) |
 
 ```bash
+stl-render model.stl -o preview.png --view iso     # default
 stl-render model.stl -o preview.png --view front
-stl-render model.stl -o preview.png --view top
-stl-render model.stl -o preview.png --view iso
-stl-render model.stl -o preview.png --view print
+stl-render model.stl -o preview.png --view print --material-color tan
 ```
 
 **Standard presets (Y-up):** `front`, `back`, `left`, `right`, `top`, `bottom`, `iso`
 
 **Print presets (Z-up):** `print`, `print-front`, `print-left`, `print-right`, `print-back`, `print-grid`
 
-### Print View Angles
-
-All print views maintain Z-up orientation (model appears as it would on a print bed):
+### Print Angles
 
 | Front | Left | Right | Back |
 |-------|------|-------|------|
@@ -195,14 +60,13 @@ All print views maintain Z-up orientation (model appears as it would on a print 
 
 ```bash
 stl-render model.stl -o preview.png --view print-front
-stl-render model.stl -o preview.png --view print-left
-stl-render model.stl -o preview.png --view print-right
 stl-render model.stl -o preview.png --view print-back
 ```
 
 ### Print Grid
 
-Generate all four print angles in a single 2x2 grid image:
+`print-grid` renders all four print angles into a single 2×2 image — handy for
+product listings:
 
 | Print Grid |
 |------------|
@@ -212,7 +76,6 @@ Generate all four print angles in a single 2x2 grid image:
 stl-render model.stl -o preview.png --view print-grid --width 1024 --height 1024
 ```
 
-The grid layout is:
 ```
 +---------------+---------------+
 | print-front   | print-right   |
@@ -223,135 +86,44 @@ The grid layout is:
 
 ## Material Colors
 
-Use `--material-color` with named presets or hex colors to match common filament colors:
+Set the surface color with a named filament preset or any 6-digit hex value.
+Preset names are case-insensitive; `grey` and `gray` are aliases.
 
 | Blue Grey (`#708090`) | Tan (`#C19A6B`) |
 |-----------------------|-----------------|
 | ![Blue Grey Sphere](examples/sphere_print_bluegrey.png) | ![Tan Sphere](examples/sphere_iso_tan.png) |
 
 ```bash
-stl-render model.stl -o preview.png --material-color blue-grey  # Blue grey
-stl-render model.stl -o preview.png --material-color tan        # Tan
-stl-render model.stl -o preview.png --material-color "#ffcc00"  # Custom hex
+stl-render model.stl -o preview.png --material-color blue-grey
+stl-render model.stl -o preview.png --material-color tan
+stl-render model.stl -o preview.png --material-color "#ffcc00"  # custom hex
 ```
 
-Preset names are case insensitive. `grey` and `gray` are aliases.
-
-| Preset | Hex |
-|--------|-----|
-| `tan` | `#C19A6B` |
-| `blue-grey` | `#708090` |
-| `white` | `#FFFFFF` |
-| `black` | `#1A1A1A` |
-| `red` | `#CC3333` |
-| `orange` | `#FF6600` |
-| `green` | `#339933` |
-| `blue` | `#3366CC` |
-| `grey` / `gray` | `#808080` |
-| `silver` | `#C0C0C0` |
-
-Examples for fixture previews:
-
-```bash
-stl-render fixtures/cube.stl -o cube-tan.png --view print --material-color tan
-stl-render fixtures/sphere.stl -o sphere-silver.png --view iso --material-color silver
-stl-render fixtures/cylinder.stl -o cylinder-orange.png --view print --material-color orange
-```
-
-## Dimension Overlay
-
-Show physical dimensions (X/Y/Z extents) overlaid on renders. Useful for understanding print size at a glance.
-The dashed bounding box is depth-aware: rear edge fragments are hidden by the model, while nearer edge fragments are drawn over it, giving the appearance of a model inside a transparent box.
-
-| Millimeters (default) | Inches |
-|-----------------------|--------|
-| ![Depth-aware dimension box](examples/dimensions_benchy.png) | ![Depth-aware dimension box in inches](examples/dimensions_inches.png) |
-
-```bash
-# Show dimensions in millimeters (default)
-stl-render model.stl -o preview.png --dimensions
-
-# Show dimensions in inches
-stl-render model.stl -o preview.png --dimensions --units in
-
-# Custom dimension line color
-stl-render model.stl -o preview.png --dimensions --dimension-color "#ff0000"
-```
-
-Dimensions work with animated GIFs too:
-
-| Rotating with Dimensions                                 |
-|----------------------------------------------------------|
-| ![Animated Dimensions](examples/dimensions_animated.gif) |
-
-```bash
-stl-render model.stl -o preview.gif --animate --frames 24 --frame-delay 150 --dimensions
-```
-
-The overlay automatically chooses high-contrast colors based on the rendered image.
-
-## Watermark
-
-Composite a logo or watermark (PNG with transparency) onto the output for consistent branding across a model collection. The watermark is scaled relative to the output width, placed with a margin inset, and alpha-blended so transparent regions of the logo show the render beneath.
-
-| Logo (PNG with alpha) | Watermarked Render |
-|-----------------------|--------------------|
-| ![Watermark Logo](examples/watermark_logo.png) | ![Benchy with Watermark](examples/benchy_watermark.png) |
-
-```bash
-# Default: bottom-right, 15% of output width, full opacity
-stl-render model.stl -o preview.png --watermark logo.png
-
-# Position, size, and margin
-stl-render model.stl -o preview.png --watermark logo.png \
-    --watermark-position bottom-right --watermark-scale 18 --watermark-margin 16
-
-# Semi-transparent overlay
-stl-render model.stl -o preview.png --watermark logo.png --watermark-opacity 50
-```
-
-### Watermark Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--watermark` | (none) | Path to watermark image (PNG with alpha) |
-| `--watermark-position` | `bottom-right` | `top-left`, `top-right`, `bottom-left`, `bottom-right`, `center` |
-| `--watermark-opacity` | `100` | Opacity percentage (0–100) |
-| `--watermark-scale` | `15` | Watermark width as a percent of output width |
-| `--watermark-margin` | `10` | Inset from the edges, in pixels |
-
-The watermark applies to every output mode:
-
-```bash
-# On each frame of an animation
-stl-render model.stl -o preview.gif --animate --frames 24 --watermark logo.png
-
-# Once on the final print-grid composite
-stl-render model.stl -o grid.png --view print-grid --watermark logo.png
-
-# Same watermark on every file in a batch
-stl-render *.stl -o output/ --watermark logo.png
-```
-
-A missing or undecodable watermark file is reported as an error; invalid position, opacity, or scale values are rejected as usage errors.
+| Preset | Hex | | Preset | Hex |
+|--------|-----|-|--------|-----|
+| `tan` | `#C19A6B` | | `orange` | `#FF6600` |
+| `blue-grey` | `#708090` | | `green` | `#339933` |
+| `white` | `#FFFFFF` | | `blue` | `#3366CC` |
+| `black` | `#1A1A1A` | | `grey` / `gray` | `#808080` |
+| `red` | `#CC3333` | | `silver` | `#C0C0C0` |
 
 ## Lighting Presets
+
+Control how surfaces are shaded.
 
 | Flat | Studio (default) | Technical |
 |------|------------------|-----------|
 | ![Flat](examples/lighting_flat.png) | ![Studio](examples/lighting_studio.png) | ![Technical](examples/lighting_technical.png) |
 
 ```bash
-stl-render model.stl -o preview.png --lighting flat       # Single front light
-stl-render model.stl -o preview.png --lighting studio     # Key + fill + rim (default)
-stl-render model.stl -o preview.png --lighting technical  # Uniform multi-directional
+stl-render model.stl -o preview.png --lighting flat       # Single front light — technical drawings
+stl-render model.stl -o preview.png --lighting studio     # Key + fill + rim (default) — presentation
+stl-render model.stl -o preview.png --lighting technical  # Uniform multi-directional — inspection
 ```
 
-- **Flat**: Single front-facing light. Good for technical drawings.
-- **Studio**: Three-point lighting (key, fill, rim). Good for presentation renders.
-- **Technical**: Even illumination from multiple directions. Good for inspection.
-
 ## Background Options
+
+Transparent by default; switch to a solid fill with any hex color.
 
 | Transparent (default) | Solid White | Solid Dark |
 |-----------------------|-------------|------------|
@@ -365,7 +137,7 @@ stl-render model.stl -o preview.png --background solid --background-color "#2d2d
 
 ## Anti-Aliasing
 
-Higher AA levels render at increased resolution then downsample for smoother edges.
+Supersample at 2× (default) or 4× resolution, then downsample for smoother edges.
 
 | None | 2x (default) | 4x |
 |------|--------------|-----|
@@ -374,35 +146,190 @@ Higher AA levels render at increased resolution then downsample for smoother edg
 ```bash
 stl-render model.stl -o preview.png --aa none  # Fastest, aliased edges
 stl-render model.stl -o preview.png --aa 2x    # Good quality (default)
-stl-render model.stl -o preview.png --aa 4x    # Best quality, 4x render time
+stl-render model.stl -o preview.png --aa 4x    # Best quality, ~4x render time
 ```
 
-## Custom Camera Angles
-
-For precise control, use `--azimuth` and `--elevation` instead of presets:
+## Image Size & Padding
 
 ```bash
-# Azimuth: rotation around vertical axis (0-360)
-# Elevation: angle above horizon (-90 to 90)
-
-stl-render model.stl -o preview.png --azimuth 45 --elevation 30
-stl-render model.stl -o preview.png --azimuth 135 --elevation 15
-```
-
-## Image Size and Padding
-
-```bash
-# Custom dimensions
+# Output dimensions
 stl-render model.stl -o preview.png --width 1024 --height 768
 
-# Adjust padding (space around model)
+# Padding (space around the model; default 0.08)
 stl-render model.stl -o preview.png --padding 0.0   # No margin
 stl-render model.stl -o preview.png --padding 0.2   # 20% margin
 ```
 
+## Custom Camera Angles
+
+When the presets don't fit, drive the camera directly with `--azimuth` (rotation
+around the vertical axis, 0–360) and `--elevation` (angle above the horizon,
+-90 to 90):
+
+```bash
+stl-render model.stl -o preview.png --azimuth 45 --elevation 30
+stl-render model.stl -o preview.png --azimuth 135 --elevation 15
+```
+
+## Animated GIF
+
+`--animate` renders a smooth 360° rotation around the Z axis (print-bed
+orientation) at a fixed 25° elevation. A bounding-sphere fit keeps the model the
+same size in every frame.
+
+| Rotating 3DBenchy |
+|-------------------|
+| ![Animated Benchy](examples/benchy_animated.gif) |
+
+```bash
+stl-render model.stl -o preview.gif --animate --material-color tan --aa 4x
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--animate` | — | Enable animated GIF output |
+| `--frames` | 16 | Number of frames in the rotation |
+| `--frame-delay` | 100 | Milliseconds between frames |
+
+```bash
+stl-render model.stl -o preview.gif --animate --frames 8 --frame-delay 50    # quick preview
+stl-render model.stl -o preview.gif --animate --frames 24                     # smoother
+stl-render model.stl -o preview.gif --animate --frame-delay 200               # slow rotation
+```
+
+> All frames are held in memory before encoding, so peak memory grows with
+> `--frames` × output size. Reduce either for very long, high-resolution loops.
+
+## Dimension Overlay
+
+`--dimensions` overlays a depth-aware bounding box with X/Y/Z extents — useful for
+reading print size at a glance. Rear box edges are hidden by the model and near
+edges drawn over it, so the box appears to wrap around the part. Colors are
+auto-chosen for contrast against the render.
+
+| Millimeters (default) | Inches |
+|-----------------------|--------|
+| ![Dimension box](examples/dimensions_benchy.png) | ![Dimension box in inches](examples/dimensions_inches.png) |
+
+```bash
+stl-render model.stl -o preview.png --dimensions                          # mm (default)
+stl-render model.stl -o preview.png --dimensions --units in               # inches
+stl-render model.stl -o preview.png --dimensions --dimension-color "#ff0000"
+```
+
+It works with animations too (label edges are fixed on frame 0 so they don't jump):
+
+| Rotating with Dimensions |
+|--------------------------|
+| ![Animated Dimensions](examples/dimensions_animated.gif) |
+
+```bash
+stl-render model.stl -o preview.gif --animate --frames 24 --frame-delay 150 --dimensions
+```
+
+## Watermark
+
+`--watermark` composites a logo (PNG with alpha) onto the output for consistent
+branding. It is scaled relative to the output width, inset by a margin, and
+alpha-blended so transparent regions of the logo show the render beneath.
+
+| Logo (PNG with alpha) | Watermarked Render |
+|-----------------------|--------------------|
+| ![Watermark Logo](examples/watermark_logo.png) | ![Benchy with Watermark](examples/benchy_watermark.png) |
+
+```bash
+stl-render model.stl -o preview.png --watermark logo.png                  # bottom-right, 15%, opaque
+stl-render model.stl -o preview.png --watermark logo.png --watermark-opacity 50
+stl-render model.stl -o preview.png --watermark logo.png \
+    --watermark-position top-left --watermark-scale 18 --watermark-margin 16
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--watermark` | (none) | Path to watermark image (PNG with alpha) |
+| `--watermark-position` | `bottom-right` | `top-left`, `top-right`, `bottom-left`, `bottom-right`, `center` |
+| `--watermark-opacity` | `100` | Opacity percentage (0–100) |
+| `--watermark-scale` | `15` | Watermark width as a percent of output width |
+| `--watermark-margin` | `10` | Inset from the edges, in pixels |
+
+The watermark applies to every output mode — each GIF frame, the print-grid
+composite (once), and all files in a batch:
+
+```bash
+stl-render model.stl -o preview.gif --animate --frames 24 --watermark logo.png
+stl-render model.stl -o grid.png --view print-grid --watermark logo.png
+stl-render *.stl -o output/ --watermark logo.png
+```
+
+A missing or undecodable watermark file is an error; invalid position, opacity,
+or scale values are rejected as usage errors.
+
+## 3MF Scenes & Colors
+
+3MF packages can describe whole scenes and carry embedded colors — both render
+automatically with no extra flags.
+
+### Multi-Object Scenes & Assemblies
+
+| Multi-Object | Assembly with Components |
+|--------------|--------------------------|
+| ![Multi Object](examples/format_3mf_multi.png) | ![Assembly](examples/format_3mf_assembly.png) |
+
+```bash
+stl-render multi_object.3mf -o preview.png --view print   # all objects, correctly positioned
+stl-render assembly.3mf -o preview.png --view iso         # components with nested transforms
+```
+
+Supported: build items with transform matrices, component references with nested
+transforms, and unit metadata (mm, cm, inch, foot, micron).
+
+### Embedded Colors
+
+Colorgroups (per-face and per-vertex colors) render by default:
+
+| Colored Cube (static) | Colored Cube (animated) |
+|-----------------------|-------------------------|
+| ![Colored Cube](examples/format_3mf_colored.png) | ![Colored Cube Animated](examples/format_3mf_colored.gif) |
+
+```bash
+# Embedded colors (default)
+stl-render colored_model.3mf -o preview.png
+
+# Ignore embedded colors, use a uniform material color
+stl-render colored_model.3mf -o preview.png --force-color --material-color tan
+
+# Inspect the palette (index → hex), then exit
+stl-render model.3mf -o /dev/null --list-colors
+```
+
+```text
+  0: #ff0000 (alpha: 255)
+  1: #00ff00 (alpha: 255)
+  2: #0000ff (alpha: 255)
+  ...
+```
+
+### Overriding Palette Colors
+
+`--color-map` recolors palette entries by index (indices match `--list-colors`)
+without editing the file. Each override replaces that color wherever it appears.
+
+| Embedded Colors | Remapped with `--color-map` |
+|-----------------|------------------------------|
+| ![Colored Cube](examples/colormap_original.png) | ![Recolored Cube](examples/colormap_remapped.png) |
+
+```bash
+stl-render colored_cube.3mf -o preview.png --view iso \
+  --color-map "0:#ffffff,1:#ff8800,2:#8800ff,3:#00aaff,4:#ffdd00,5:#ff0066"
+```
+
+Out-of-range indices are ignored, and overrides have no effect under
+`--force-color` (which discards embedded colors entirely).
+
 ## Metadata Output
 
-Export render information as JSON:
+`--metadata` writes a JSON sidecar with the triangle count, bounding box, and
+dimensions — useful for indexing or downstream tooling:
 
 ```bash
 stl-render model.stl -o preview.png --metadata info.json
@@ -412,28 +339,21 @@ stl-render model.stl -o preview.png --metadata info.json
 {
   "input_file": "model.stl",
   "triangle_count": 12,
-  "bounding_box": {
-    "min": [-0.5, -0.5, -0.5],
-    "max": [0.5, 0.5, 0.5]
-  },
+  "bounding_box": { "min": [-0.5, -0.5, -0.5], "max": [0.5, 0.5, 0.5] },
   "dimensions": [1.0, 1.0, 1.0]
 }
 ```
 
 ## Batch Processing
 
-### Multiple Files
-
-Render multiple mesh files to a directory:
+Pass multiple files (or a directory) and an output directory to render in bulk.
 
 ```bash
-# Render all shell-expanded STL files to output directory
+# Shell-expanded files → output directory (model.stl -> output/model.png)
 stl-render *.stl -o output/
-
-# Output naming: model.stl -> output/model.png
 ```
 
-Batch mode prints one concise status line per attempted conversion:
+Batch mode prints one status line per file:
 
 ```text
 Rendered fixtures/cube.stl as output/cube.png successful
@@ -442,73 +362,55 @@ Rendered fixtures/truncated.stl as output/truncated.png failed
 
 ### Recursive Directories
 
-Render every supported mesh file under a directory tree:
-
 ```bash
 stl-render models/ -o output/ --recursive
 stl-render models/ -o output/ --recursive --view front,iso,print
 ```
 
-Directory inputs include `.stl`, `.obj`, and `.3mf` files case-insensitively. Nested input paths are preserved under the output directory:
+Directory inputs include `.stl`, `.obj`, and `.3mf` (case-insensitive), and
+nested paths are preserved under the output directory:
 
 ```text
-models/cube.stl -> output/cube.png
-models/parts/bracket.stl -> output/parts/bracket.png
-models/parts/bracket.stl --view front,iso -> output/parts/bracket.front.png, output/parts/bracket.iso.png
+models/cube.stl              -> output/cube.png
+models/parts/bracket.stl     -> output/parts/bracket.png
 ```
 
-If multiple source formats would otherwise write the same target, the source extension is kept in the output name:
+If different source formats would collide on one target, the source extension is
+kept in the output name:
 
 ```text
 models/cube.stl -> output/cube.stl.png
 models/cube.obj -> output/cube.obj.png
-models/cube.3mf -> output/cube.3mf.png
 ```
 
 ### Multiple Views
 
-Generate multiple views of a single model:
+Render several views of each model in one run (suffixed by view name):
 
 ```bash
-# Render front, back, and iso views
 stl-render model.stl -o output/ --view front,back,iso
+# -> model.front.png, model.back.png, model.iso.png
 
-# Output naming: model.front.png, model.back.png, model.iso.png
-```
-
-### Multiple Files and Views
-
-Combine both for comprehensive documentation:
-
-```bash
-# Render all print angles for multiple models
 stl-render *.stl -o output/ --view print-front,print-left,print-right,print-back
-
-# Output: model1.print-front.png, model1.print-left.png, ...
 ```
 
 ### Error Handling
 
-By default, batch mode continues processing if one file fails:
+Batch mode continues past failures by default and exits with the worst error
+code; `--strict` aborts on the first error.
 
 ```bash
-# Continue on errors (default)
-stl-render *.stl -o output/
-
-# Abort on first error
-stl-render *.stl -o output/ --strict
+stl-render *.stl -o output/            # continue on errors (default)
+stl-render *.stl -o output/ --strict   # abort on first error
 ```
 
 ## Piping
 
+Use `-` for stdin/stdout to compose with other tools:
+
 ```bash
-# Read from stdin
-cat model.stl | stl-render - -o preview.png
-
-# Write to stdout
-stl-render model.stl -o - > preview.png
-
-# Full pipeline
+cat model.stl | stl-render - -o preview.png          # read from stdin
+stl-render model.stl -o - > preview.png              # write to stdout
 cat model.stl | stl-render - -o - | convert - thumbnail.jpg
 ```
 
@@ -517,40 +419,35 @@ cat model.stl | stl-render - -o - | convert - thumbnail.jpg
 ```bash
 # High-quality print preview with custom color
 stl-render model.stl -o preview.png \
-    --view print \
-    --material-color blue-grey \
-    --lighting studio \
-    --aa 4x \
-    --width 1024 \
-    --height 1024
+    --view print --material-color blue-grey --lighting studio \
+    --aa 4x --width 1024 --height 1024
 
 # Technical documentation render
 stl-render model.stl -o preview.png \
-    --view front \
-    --material-color "#cccccc" \
-    --lighting technical \
-    --background solid \
-    --background-color "#ffffff"
-
-# Print grid for product listing
-stl-render model.stl -o grid.png \
-    --view print-grid \
-    --material-color tan \
-    --aa 4x \
-    --width 1024 \
-    --height 1024
+    --view front --material-color "#cccccc" --lighting technical \
+    --background solid --background-color "#ffffff"
 
 # Branded preview for sharing
 stl-render model.stl -o preview.png \
-    --view print \
-    --material-color tan \
-    --aa 4x \
+    --view print --material-color tan --aa 4x \
     --background solid --background-color "#f4f4f4" \
     --watermark logo.png --watermark-position bottom-right --watermark-scale 18
 
-# Batch render all angles for documentation
+# Batch all angles for documentation
 stl-render model.stl -o docs/ \
     --view front,back,left,right,top,print \
-    --material-color blue-grey \
-    --aa 2x
+    --material-color blue-grey --aa 2x
+```
+
+## Gallery: 3DBenchy
+
+[3DBenchy](https://www.3dbenchy.com) is the public-domain 3D-printing benchmark
+model (~225K triangles), shown here to demonstrate stl-render on a real part.
+
+| Blue Grey | Tan |
+|-----------|-----|
+| ![Benchy Blue Grey](examples/benchy_print_bluegrey.png) | ![Benchy Tan](examples/benchy_print_tan.png) |
+
+```bash
+stl-render 3DBenchy.stl -o benchy.png --view print --material-color blue-grey --aa 4x
 ```
