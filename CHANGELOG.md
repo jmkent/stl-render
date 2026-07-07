@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-07
+
 ### Added
 
 - **OBJ format support**: Wavefront `.obj` files (vertices and faces, fan-triangulated for polygons), auto-detected from file content.
@@ -64,5 +66,6 @@ Initial release.
 - Memory-efficient: Framebuffer size bounds memory, not input file size
 - Tested on files up to 500MB (~10M triangles)
 
-[Unreleased]: https://github.com/jmkent/stl-render/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jmkent/stl-render/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jmkent/stl-render/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jmkent/stl-render/releases/tag/v0.1.0
