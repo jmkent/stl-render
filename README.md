@@ -25,11 +25,31 @@ stl-render model.3mf -o preview.png
 
 ## Installation
 
+### Prebuilt binaries
+
+Download the archive for your platform from the
+[latest release](https://github.com/jmkent/stl-render/releases/latest), extract it,
+and put `stl-render` on your `PATH`.
+
+| Platform | Archive suffix |
+|----------|----------------|
+| Linux x86_64 | `x86_64-unknown-linux-gnu.tar.gz` |
+| Linux x86_64 (static/musl) | `x86_64-unknown-linux-musl.tar.gz` |
+| Linux aarch64 | `aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Apple Silicon | `aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `x86_64-apple-darwin.tar.gz` |
+| Windows x86_64 | `x86_64-pc-windows-msvc.zip` |
+
+Example (macOS Apple Silicon):
+
 ```bash
-cargo install stl-render
+curl -sSL -o stl-render.tar.gz \
+  https://github.com/jmkent/stl-render/releases/download/v0.2.0/stl-render-0.2.0-aarch64-apple-darwin.tar.gz
+tar xzf stl-render.tar.gz
+./stl-render --help
 ```
 
-Or build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/jmkent/stl-render
